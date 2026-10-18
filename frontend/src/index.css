@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- Base ---------- */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    margin: 0;
+    background: #F5F7F9;
+    color: #172125;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  h1, h2, h3 { letter-spacing: -0.02em; }
+  :focus-visible { outline: 2px solid #D63A0C; outline-offset: 2px; }
+  ::selection { background: #FFD8CA; color: #172125; }
+  /* Soft default for every border so an unstyled or unknown border colour never renders as
+     currentColor (near-black). Utilities such as border-ember still override this. */
+  *, ::before, ::after { border-color: rgba(23, 33, 37, 0.08); }
+}
+
+@keyframes launcher-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+/* ---------- Design system components ---------- */
+@layer components {
+  .page-container { @apply mx-auto w-full max-w-page px-5 sm:px-8; }
+  .eyebrow { @apply text-xs font-semibold uppercase tracking-[0.14em] text-ember; }
+  .display { @apply text-[2.6rem] font-bold leading-[1.08] tracking-[-0.03em] sm:text-5xl lg:text-[3.5rem] xl:text-6xl; text-wrap: balance; }
+  .section-title { @apply text-3xl font-bold leading-tight tracking-[-0.025em] sm:text-4xl; text-wrap: balance; }
+  .lead { @apply text-lg leading-relaxed text-slate-600; }
+
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60; }
+  .btn-md { @apply h-11 px-5 text-sm; }
+  .btn-lg { @apply h-12 px-6 text-base; }
+  .btn-sm { @apply h-9 px-3.5 text-sm; }
+  .btn-primary { @apply bg-ember text-white shadow-sm hover:bg-emberdark active:bg-emberdeep; }
+  .btn-secondary { @apply border border-slate-300 bg-white text-ink hover:border-slate-400 hover:bg-slate-50; }
+  .btn-dark { @apply bg-ink text-white hover:bg-charcoal; }
+  .btn-ghost-light { @apply border border-white/25 text-white hover:bg-white/10; }
+
+  .form-label { @apply mb-1.5 block text-sm font-medium text-ink; }
+  .form-input {
+    @apply block h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-[15px] text-ink shadow-sm transition
+      placeholder:text-slate-400 hover:border-slate-400 focus:border-ember focus:outline-none focus:ring-4 focus:ring-brand/15;
+  }
+  .form-input[aria-invalid='true'] { @apply border-danger focus:border-danger focus:ring-danger/15; }
+  .form-error { @apply mt-1.5 flex items-start gap-1.5 text-sm text-danger; }
+  .form-hint { @apply mt-1.5 text-sm text-slate-500; }
+  .card { @apply rounded-xl border border-line bg-white shadow-card; }
+  /* Premium light surfaces (explicit values so they never depend on custom theme tokens). */
+  .u-card { background-color: #FFFFFF; border: 1px solid rgba(23, 33, 37, 0.08); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.03); }
+  .u-lift { transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease; }
+  .u-lift:hover { transform: translateY(-2px); border-color: rgba(23, 33, 37, 0.12); box-shadow: 0 2px 4px rgba(16, 24, 40, 0.04), 0 14px 28px -12px rgba(16, 24, 40, 0.14); }
+  @media (prefers-reduced-motion: reduce) { .u-lift:hover { transform: none; } }
+  .u-tile { background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0)); box-shadow: inset 0 0 0 1px rgba(23, 33, 37, 0.05); }
+  .u-avatar { background-image: linear-gradient(135deg, #FA6A3C 0%, #D63A0C 55%, #A92D08 100%); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18); }
+  .u-btn-primary { display: inline-flex; align-items: center; justify-content: center; color: #FFFFFF; background-image: linear-gradient(180deg, #E9521F 0%, #D63A0C 100%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(150, 40, 8, 0.24), 0 4px 10px -4px rgba(214, 58, 12, 0.4); transition: background-image 150ms ease, box-shadow 150ms ease; }
+  .u-btn-primary:hover { background-image: linear-gradient(180deg, #DC4719 0%, #BE330A 100%); }
+  .u-btn-primary:active { background-image: linear-gradient(180deg, #BE330A 0%, #A92D08 100%); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15); }
+  .u-btn-secondary { display: inline-flex; align-items: center; color: #172125; background-color: #FFFFFF; border: 1px solid rgba(23, 33, 37, 0.1); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
+  .u-btn-secondary:hover { background-color: #FAF9F7; border-color: rgba(23, 33, 37, 0.16); color: #D63A0C; }
+  .link { @apply font-medium text-ember underline-offset-4 hover:text-emberdark hover:underline; }
+
+  /* Auth pages: dark-mode friendly (follows the OS setting) */
+  .auth-surface { background: #FFFFFF; }
+  /* Auth pages always use the light theme. */
+}
+
+/* Browser autofill keeps the input readable in both themes */
+.form-input:-webkit-autofill,
+.form-input:-webkit-autofill:hover,
+.form-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #172125;
+  -webkit-box-shadow: 0 0 0 1000px #fff inset;
+  caret-color: #172125;
+}
+
+.bg-grid-dark {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+.bg-dots { background-image: radial-gradient(rgba(23, 33, 37, 0.12) 1px, transparent 1px); background-size: 16px 16px; }
+
+/* BPMN canvas (bpmn-js). The bpmn.io logo (.bjs-powered-by) is required by the bpmn-js license: never hide or cover it. */
+.urap-bpmn .djs-container { font-family: inherit; }
+.urap-bpmn .djs-container:focus { outline: none; }
+.urap-bpmn .djs-container:focus-visible { outline: 2px solid rgba(214, 58, 12, 0.35); outline-offset: -2px; }
+.urap-bpmn .djs-palette { background: #FFFFFF; border: 1px solid #ECE8E3; border-radius: 12px; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 24px -12px rgba(23, 33, 37, 0.18); top: 16px; left: 16px; }
+.urap-bpmn .djs-palette .entry:hover { color: #D63A0C; }
+.urap-bpmn .djs-context-pad .entry { border-radius: 6px; }
+.urap-bpmn .djs-popup { border-radius: 10px; border-color: #ECE8E3; box-shadow: 0 16px 40px -16px rgba(23, 33, 37, 0.28); }
+.urap-bpmn .djs-element.urap-error .djs-visual > :nth-child(1) { stroke: #D92D20 !important; stroke-width: 2.5px !important; stroke-dasharray: 5 3; fill: #FEF3F2 !important; }
+.urap-bpmn .djs-connection.urap-error .djs-visual > path { stroke: #D92D20 !important; stroke-dasharray: 5 3; }
+.urap-bpmn .djs-shape.urap-done .djs-visual > :nth-child(1) { stroke: #1F8A4C !important; stroke-width: 2.5px !important; fill: #ECF7EF !important; }
+.urap-bpmn .djs-connection.urap-done .djs-visual > path { stroke: #1F8A4C !important; stroke-width: 2.5px !important; }
+.urap-bpmn .djs-shape.urap-active .djs-visual > :nth-child(1) { stroke: #2F6FD0 !important; stroke-width: 3px !important; fill: #EAF1FB !important; animation: urap-bpmn-pulse 1.6s ease-in-out infinite; }
+.urap-bpmn .djs-shape.urap-failed .djs-visual > :nth-child(1) { stroke: #D92D20 !important; stroke-width: 3px !important; fill: #FDEEEC !important; }
+.urap-bpmn .djs-shape.urap-cancelled .djs-visual > :nth-child(1) { stroke: #98A2B3 !important; fill: #F2F4F7 !important; }
+.urap-bpmn .djs-shape.urap-dim .djs-visual { opacity: 0.55; }
+@keyframes urap-bpmn-pulse { 0%, 100% { stroke-opacity: 1; } 50% { stroke-opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .urap-bpmn .djs-shape.urap-active .djs-visual > :nth-child(1) { animation: none; } }

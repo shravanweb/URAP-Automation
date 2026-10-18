@@ -1,0 +1,542 @@
+openapi: 3.0.3
+info:
+  title: Universal RPA Automation Platform
+  version: 1.1.0
+servers:
+  - url: http://localhost:4000
+paths:
+  /api/health:
+    get:
+      summary: Database health
+      responses:
+        '200':
+          description: Database responded
+        '503':
+          description: Database unavailable
+  /api/auth/login:
+    post:
+      summary: Sign in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Access token, refresh token, and user
+        '401':
+          description: Invalid credentials
+  /api/projects:
+    get:
+      summary: List projects visible to the caller
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Project page
+    post:
+      summary: Create a project
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201':
+          description: Created project
+  /api/workflows/{id}/publish:
+    post:
+      summary: Validate and publish the current draft
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Workflow published
+        '400':
+          description: Validation failed
+  /api/workflows/{id}/run:
+    post:
+      summary: Queue a published workflow
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '202':
+          description: Job queued
+  /api/jobs/{id}:
+    get:
+      summary: Job, attempts, steps, and artifacts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Job detail
+  /api/robot/jobs/{id}/result:
+    post:
+      summary: Robot reports SUCCEEDED or FAILED
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Job updated
+        '403':
+          description: Robot lacks project access
+  /api/workflows/{id}:
+    patch:
+      summary: Rename a workflow or change its description or execution type
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Updated workflow
+        '400':
+          description: Unknown or invalid field
+  /api/queues:
+    get:
+      summary: List work queues with item counts
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Queues
+    post:
+      summary: Create a work queue
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201':
+          description: Queue
+        '409':
+          description: Queue conflict
+  /api/queues/{id}:
+    get:
+      summary: Queue with item counts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Queue
+    patch:
+      summary: Update retries, trigger, or status
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Queue
+  /api/queues/{id}/items:
+    get:
+      summary: List queue items (status, reference)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Items
+    post:
+      summary: "Add one item, or {\"items\": [...]} with up to 500 items"
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: Created items
+        '409':
+          description: DUPLICATE_REFERENCE
+  /api/queue-items/{id}/retry:
+    post:
+      summary: Requeue a FAILED or ABANDONED item
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Item
+  /api/queue-items/{id}/delete:
+    post:
+      summary: Delete a NEW item
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Item
+  /api/schedules/{id}/runs:
+    get:
+      summary: Schedule history
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Runs
+  /api/schedules/{id}/enable:
+    post:
+      summary: Enable and recompute next run
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Schedule
+        '409':
+          description: One-time schedule already passed
+  /api/schedules/{id}/disable:
+    post:
+      summary: Disable a schedule
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Schedule
+  /api/notifications:
+    get:
+      summary: In-app notifications
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Notifications
+  /api/users/{id}:
+    patch:
+      summary: Update a user (administrator)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: User
+        '409':
+          description: You cannot disable yourself or remove your own administrator role
+  /api/robots:
+    get:
+      summary: List robots and heartbeat state
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Robots
+    post:
+      summary: Register a robot; the token is returned once
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201':
+          description: Robot id and token
+  /api/robots/{id}/rotate-token:
+    post:
+      summary: Issue a new robot token
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: New token
+  /api/robot/jobs/{id}/claim:
+    post:
+      summary: Robot takes a queued job
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Job RUNNING
+        '409':
+          description: Already claimed
+  /api/robot/queues/{id}/next:
+    post:
+      summary: Robot gets the next transaction item or null
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Item or null
+        '403':
+          description: Robot lacks project access
+  /api/robot/queues/{id}/items:
+    post:
+      summary: Robot adds queue items
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: Items
+  /api/robot/queue-items/{id}/result:
+    post:
+      summary: Robot sets SUCCESSFUL or FAILED with errorType
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Item
+  /api/robot/jobs/{id}/package:
+    get:
+      summary: Package (definition and input) for a job claimed by this robot
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+  /api/robot/jobs/{id}/artifacts:
+    post:
+      summary: Upload a file produced by the robot (job must be RUNNING)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: OK
+  /api/tasks:
+    get:
+      summary: Action Center tasks; query status, projectId, type, jobId, mine
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+  /api/tasks/summary:
+    get:
+      summary: Pending, mine, and overdue counts
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+  /api/tasks/{id}:
+    get:
+      summary: One task with canComplete
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+  /api/tasks/{id}/complete:
+    post:
+      summary: Complete a task and resume its job
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string }
+                data: { type: object }
+                comment: { type: string }
+      responses:
+        '200':
+          description: OK
+  /api/tasks/{id}/assign:
+    post:
+      summary: Assign to a user, yourself (no userId), or release (null)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string, nullable: true }
+      responses:
+        '200':
+          description: OK
+  /api/recorder/sessions:
+    post:
+      summary: Start a web recorder session
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string }
+                headless: { type: boolean }
+      responses:
+        '200':
+          description: OK
+  /api/recorder/sessions/{id}:
+    get:
+      summary: Recorded events, picks, and generated steps
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+  /api/recorder/sessions/{id}/mode:
+    post:
+      summary: Switch between record and pick
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode: { type: string, enum: [record, pick] }
+      responses:
+        '200':
+          description: OK
+  /api/recorder/sessions/{id}/stop:
+    post:
+      summary: Stop the recorder session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+  /api/auth/options:
+    get:
+      summary: Public authentication options (allowSignup, passwordReset, passwordMinLength)
+      responses:
+        '200':
+          description: OK
+  /api/auth/signup:
+    post:
+      summary: Self sign-up; creates a non-administrator user and a starter project, returns a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName, email, password, organization, acceptTerms]
+              properties:
+                displayName: { type: string, minLength: 2, maxLength: 200 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12, description: Letters and numbers required }
+                organization: { type: string, minLength: 2, maxLength: 120 }
+                acceptTerms: { type: boolean, enum: [true] }
+      responses:
+        '201':
+          description: Account created and signed in
+        '400':
+          description: Validation failed
+        '403':
+          description: SIGNUP_DISABLED
+        '409':
+          description: EMAIL_IN_USE
+        '429':
+          description: RATE_LIMITED
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

@@ -1,0 +1,65 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: urap
+      MYSQL_USER: urap
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change-me}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root}
+    command: ["--default-time-zone=+00:00", "--character-set-server=utf8mb4"]
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-purap"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - urap-mysql:/var/lib/mysql
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql://urap:${MYSQL_PASSWORD:-change-me}@mysql:3306/urap
+      STORAGE_ROOT: /data/storage
+      ROBOT_ROOT: /data/robot
+    ports:
+      - "4000:4000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - urap-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["node", "src/worker.js"]
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql://urap:${MYSQL_PASSWORD:-change-me}@mysql:3306/urap
+      STORAGE_ROOT: /data/storage
+      ROBOT_ROOT: /data/robot
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - urap-data:/data
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+volumes:
+  urap-mysql:
+  urap-data:

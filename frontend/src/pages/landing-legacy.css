@@ -1,0 +1,77 @@
+/* Styles for the original landing page (LandingPage.jsx), scoped to .landing so the new design
+   system in index.css (Inter, base resets, tokens) does not change how this page renders. These
+   are the rules the page used before the redesign. */
+
+body:has(.landing) {
+  background: #FBF6EF;
+  color: #2C2825;
+}
+
+.landing {
+  font-family: Poppins, "Segoe UI", sans-serif;
+  color: #172125;
+  background: #fff;
+  /* undo the new global base: Inter features, smoothing, and rendering hints */
+  font-feature-settings: normal;
+  -webkit-font-smoothing: auto;
+  text-rendering: auto;
+}
+
+.landing h1,
+.landing h2,
+.landing h3 {
+  letter-spacing: -0.045em;
+}
+
+.landing :focus-visible {
+  outline: revert;
+  outline-offset: revert;
+}
+
+.landing button:focus-visible,
+.landing a:focus-visible,
+.landing input:focus-visible,
+.landing select:focus-visible,
+.landing textarea:focus-visible {
+  outline: 2px solid #C45C26;
+  outline-offset: 2px;
+}
+
+.landing ::selection {
+  background: Highlight;
+  color: HighlightText;
+}
+
+.landing .reveal {
+  opacity: 0;
+  transform: translateY(36px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+.landing .reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+.landing .landing-num {
+  background-image: linear-gradient(#ffd7b0 0%, rgba(250, 70, 22, 0.15) 80%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+
+/* Hero floating cubes */
+@keyframes hero-cube-float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, calc(var(--float, 12px) * -1), 0); }
+}
+.hero-cube {
+  animation-name: hero-cube-float;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-cube { animation: none; }
+}

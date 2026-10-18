@@ -1,0 +1,17 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="ValidateInputs" xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation" xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <x:Members>
+    <x:Property Name="in_Raw" Type="InArgument(x:String)" />
+    <x:Property Name="out_Valid" Type="OutArgument(x:Boolean)" />
+    <x:Property Name="out_Error" Type="OutArgument(x:String)" />
+  </x:Members>
+  <Sequence DisplayName="Validate inputs">
+    <Assign DisplayName="Require jobId projectId workflowId correlationId">
+      <Assign.To><OutArgument x:TypeArguments="x:Boolean">[out_Valid]</OutArgument></Assign.To>
+      <Assign.Value><InArgument x:TypeArguments="x:Boolean">[in_Raw.Contains("""jobId""") AndAlso in_Raw.Contains("""projectId""") AndAlso in_Raw.Contains("""workflowId""") AndAlso in_Raw.Contains("""correlationId""")]</InArgument></Assign.Value>
+    </Assign>
+    <Assign>
+      <Assign.To><OutArgument x:TypeArguments="x:String">[out_Error]</OutArgument></Assign.To>
+      <Assign.Value><InArgument x:TypeArguments="x:String">["Missing jobId, projectId, workflowId, or correlationId"]</InArgument></Assign.Value>
+    </Assign>
+  </Sequence>
+</Activity>

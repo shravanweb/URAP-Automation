@@ -1,0 +1,71 @@
+export const STEP_TYPES = [
+  'start',
+  'end',
+  'read_excel',
+  'read_csv',
+  'read_pdf_text',
+  'transform_data',
+  'validate_data',
+  'find_duplicates',
+  'if_else',
+  'for_each',
+  'http_request',
+  'database_query',
+  'browser_ui_action',
+  'file_operation',
+  'write_excel',
+  'send_notification',
+  'call_subworkflow',
+  'uipath_workflow',
+  'write_csv',
+  'log_message',
+  'add_queue_item',
+  'get_queue_item',
+  'set_queue_item_status',
+  'browser_open',
+  'browser_navigate',
+  'browser_click',
+  'browser_type',
+  'browser_get_text',
+  'browser_extract_table',
+  'browser_wait_for',
+  'browser_screenshot',
+  'browser_select_option',
+  'browser_close',
+  'desktop_open_app',
+  'desktop_attach_window',
+  'desktop_click',
+  'desktop_type',
+  'desktop_hotkey',
+  'desktop_get_text',
+  'desktop_close_window',
+  'ocr_extract',
+  'extract_document_fields',
+  'create_task',
+  'wait_for_task',
+  'sheets_read_range',
+  'sheets_append_rows',
+  'sheets_update_range',
+];
+
+export const WEB_STEP_TYPES = STEP_TYPES.filter((type) => type.startsWith('browser_') && type !== 'browser_ui_action');
+export const DESKTOP_STEP_TYPES = STEP_TYPES.filter((type) => type.startsWith('desktop_'));
+export const SHEETS_STEP_TYPES = ['sheets_read_range', 'sheets_append_rows', 'sheets_update_range'];
+
+export const JOB_STATUSES = [
+  'DRAFT',
+  'QUEUED',
+  'CLAIMED',
+  'RUNNING',
+  'SUCCEEDED',
+  'FAILED',
+  'RETRY_WAIT',
+  'CANCEL_REQUESTED',
+  'CANCELLED',
+  'SKIPPED',
+  'SUSPENDED',
+];
+
+export const MAX_LOOP_ITERATIONS = 1000;
+export const MAX_WORKFLOW_DEPTH = 5;
+export const MAX_STEP_VISITS = 5000;

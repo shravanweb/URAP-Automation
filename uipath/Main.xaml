@@ -1,0 +1,76 @@
+<Activity mc:Ignorable="sap sap2010" x:Class="Main" xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation" xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation" xmlns:scg="clr-namespace:System.Collections.Generic;assembly=mscorlib" xmlns:ui="http://schemas.uipath.com/workflow/activities" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <x:Members>
+    <x:Property Name="in_InboxFile" Type="InArgument(x:String)" />
+    <x:Property Name="in_ReportPath" Type="InArgument(x:String)" />
+    <x:Property Name="in_ResultPath" Type="InArgument(x:String)" />
+  </x:Members>
+  <Sequence DisplayName="URAP Main">
+    <Sequence.Variables>
+      <Variable x:TypeArguments="x:String" Name="raw" />
+      <Variable x:TypeArguments="x:Boolean" Name="valid" />
+      <Variable x:TypeArguments="x:String" Name="report" />
+      <Variable x:TypeArguments="x:String" Name="result" />
+      <Variable x:TypeArguments="x:String" Name="errorMessage" />
+    </Sequence.Variables>
+    <TryCatch DisplayName="Execute supported task">
+      <TryCatch.Try>
+        <Sequence DisplayName="Supported task">
+          <ui:InvokeWorkflowFile DisplayName="Initialize" WorkflowFileName="Workflows\Initialize.xaml" />
+          <ui:ReadTextFile DisplayName="Retrieve assigned work" FileName="[in_InboxFile]" Content="[raw]" />
+          <ui:InvokeWorkflowFile DisplayName="Validate inputs" WorkflowFileName="Workflows\ValidateInputs.xaml">
+            <ui:InvokeWorkflowFile.Arguments>
+              <InArgument x:TypeArguments="x:String" x:Key="in_Raw">[raw]</InArgument>
+              <OutArgument x:TypeArguments="x:Boolean" x:Key="out_Valid">[valid]</OutArgument>
+              <OutArgument x:TypeArguments="x:String" x:Key="out_Error">[errorMessage]</OutArgument>
+            </ui:InvokeWorkflowFile.Arguments>
+          </ui:InvokeWorkflowFile>
+          <If Condition="[valid]" DisplayName="Inputs contain jobId projectId workflowId correlationId">
+            <If.Then>
+              <Sequence DisplayName="ExecuteSupportedTask">
+                <ui:InvokeWorkflowFile DisplayName="Generate output report" WorkflowFileName="Workflows\GenerateReport.xaml">
+                  <ui:InvokeWorkflowFile.Arguments>
+                    <InArgument x:TypeArguments="x:String" x:Key="in_Raw">[raw]</InArgument>
+                    <OutArgument x:TypeArguments="x:String" x:Key="out_Report">[report]</OutArgument>
+                  </ui:InvokeWorkflowFile.Arguments>
+                </ui:InvokeWorkflowFile>
+                <ui:WriteTextFile DisplayName="Write report" FileName="[in_ReportPath]" Text="[report]" />
+                <ui:InvokeWorkflowFile DisplayName="Report results" WorkflowFileName="Workflows\ReportResults.xaml">
+                  <ui:InvokeWorkflowFile.Arguments>
+                    <InArgument x:TypeArguments="x:String" x:Key="in_Raw">[raw]</InArgument>
+                    <InArgument x:TypeArguments="x:String" x:Key="in_ReportPath">[in_ReportPath]</InArgument>
+                    <OutArgument x:TypeArguments="x:String" x:Key="out_Result">[result]</OutArgument>
+                  </ui:InvokeWorkflowFile.Arguments>
+                </ui:InvokeWorkflowFile>
+              </Sequence>
+            </If.Then>
+            <If.Else>
+              <ui:InvokeWorkflowFile DisplayName="Handle exception" WorkflowFileName="Workflows\HandleException.xaml">
+                <ui:InvokeWorkflowFile.Arguments>
+                  <InArgument x:TypeArguments="x:String" x:Key="in_Error">[errorMessage]</InArgument>
+                  <OutArgument x:TypeArguments="x:String" x:Key="out_Result">[result]</OutArgument>
+                </ui:InvokeWorkflowFile.Arguments>
+              </ui:InvokeWorkflowFile>
+            </If.Else>
+          </If>
+          <ui:WriteTextFile DisplayName="Finalize execution" FileName="[in_ResultPath]" Text="[result]" />
+        </Sequence>
+      </TryCatch.Try>
+      <TryCatch.Catches>
+        <Catch x:TypeArguments="s:Exception" xmlns:s="clr-namespace:System;assembly=mscorlib">
+          <ActivityAction x:TypeArguments="s:Exception">
+            <ActivityAction.Argument>
+              <DelegateInArgument x:TypeArguments="s:Exception" Name="exception" />
+            </ActivityAction.Argument>
+            <Sequence DisplayName="Handle exception">
+              <Assign DisplayName="Build failed executionStatus">
+                <Assign.To><OutArgument x:TypeArguments="x:String">[result]</OutArgument></Assign.To>
+                <Assign.Value><InArgument x:TypeArguments="x:String">["{""jobId"":null,""executionStatus"":""FAILED"",""errorCode"":""ROBOT_EXCEPTION"",""errorMessage"":""The robot workflow failed"",""retryable"":true}"]</InArgument></Assign.Value>
+              </Assign>
+              <ui:WriteTextFile FileName="[in_ResultPath]" Text="[result]" />
+            </Sequence>
+          </ActivityAction>
+        </Catch>
+      </TryCatch.Catches>
+    </TryCatch>
+  </Sequence>
+</Activity>
