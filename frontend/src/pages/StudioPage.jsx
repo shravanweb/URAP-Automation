@@ -1146,8 +1146,8 @@ export default function StudioPage() {
         {tab === 'templates' && (
           <div className="pt-7">
             <h2 className="text-[17px] font-semibold tracking-tight text-ink">Templates</h2>
-            <p className="mt-0.5 text-[13px] text-slate-500">Starting points built from URAP activities. Open one in Studio and adapt it.</p>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{TEMPLATES.map((item) => <ShowcaseCard key={item.title} item={item} />)}</div>
+            <p className="mt-0.5 text-[13px] text-slate-500">Complete, validated workflows built from URAP activities. Try one to open it in the Workflow Designer, pick a project, and save.</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{TEMPLATES.map((item) => <ShowcaseCard key={item.key} item={item} />)}</div>
           </div>
         )}
       </div>

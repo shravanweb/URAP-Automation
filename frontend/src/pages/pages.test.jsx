@@ -35,6 +35,17 @@ describe('pages render for a signed-in administrator', () => {
     expect(render('/queues', '/queues', <QueuesPage />)).toContain('Create queue');
   });
 
+  it('pre-fills the designer from a template and filters the palette to a pack', () => {
+    const designer = render('/workflows/new?template=purchase-approval', '/workflows/new', <WorkflowsPage mode="builder" />);
+    for (const text of ['Route a purchase request for approval', 'Manager approval', 'Approved?', 'Notify approved', 'Notify rejected', 'Started from the']) expect(designer).toContain(text);
+    expect(designer).toContain('&quot;requestedBy&quot;');
+    const web = render('/workflows/new?palette=Web', '/workflows/new', <WorkflowsPage mode="builder" />);
+    expect(web).toContain('Extract Table Data');
+    expect(web).not.toContain('Send Hotkey');
+    const unknown = render('/workflows/new?template=nope', '/workflows/new', <WorkflowsPage mode="builder" />);
+    expect(unknown).not.toContain('Started from the');
+  });
+
   it('renders the new activity groups, recorder button, and Action Center', () => {
     const designer = render('/workflows/new', '/workflows/new', <WorkflowsPage mode="builder" />);
     for (const label of ['Open Browser', 'Type Into', 'Extract Table Data', 'Send Hotkey', 'OCR (image / PDF)', 'Extract Document Fields', 'Create Form Task', 'Read Range (Google Sheets)', 'Record web']) {

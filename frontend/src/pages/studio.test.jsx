@@ -31,7 +31,8 @@ describe('Studio projects page', () => {
   it('shows the local workspace and templates tabs from the query string', () => {
     expect(render('/studio?tab=local')).toContain('Automate on your own machine');
     const templates = render('/studio?tab=templates');
-    expect(templates).toContain('Extract invoice fields into Google Sheets');
+    expect(templates).toContain('Extract invoice fields into a CSV');
+    expect(templates).toContain('href="/workflows/new?template=invoice-to-csv"');
     expect(templates).toContain('Try it');
   });
 });

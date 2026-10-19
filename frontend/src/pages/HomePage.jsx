@@ -4,10 +4,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, currentUser } from '../services/api.js';
 import { Icon } from '../components/brand.jsx';
 import { timeAgo } from '../layouts/CloudLayout.jsx';
+import { WORKFLOW_TEMPLATES, activityPacks } from '../lib/workflowTemplates.js';
 
 // Signed-in home, laid out like an Automation Cloud home page in a light theme. Everything
-// counted or listed comes from the API; the template and marketplace cards are a static
-// showcase of what URAP's activities can build, and their "Try it" links open the Studio.
+// counted or listed comes from the API; template cards open real, validated workflows in the
+// designer and activity packs are derived from the designer's activity catalog.
 
 export function greeting(date = new Date()) {
   const hour = date.getHours();
@@ -24,28 +25,21 @@ const PRODUCTS = [
   { to: '/jobs', title: 'Orchestrator', icon: 'orchestrator', tile: 'bg-[#EAF1FB] text-[#2F5FA8]', body: 'Run, schedule, and monitor jobs and queues centrally.' },
 ];
 
-export const TEMPLATES = [
-  { tag: 'Template', title: 'Extract invoice fields into Google Sheets', body: 'Read invoice PDFs with OCR and Document Understanding, then append vendor, total, and due date to a sheet.', apps: [['document', 'Document Understanding'], ['table', 'Google Sheets']] },
-  { tag: 'Template', title: 'Scrape a web table into your database', body: 'Open a portal in the browser, extract a paginated table, and upsert every row into MySQL.', apps: [['globe', 'Web automation'], ['database', 'Database']] },
-  { tag: 'Template', title: 'Route purchase approvals to a manager', body: 'Create an Action Center form task, pause the job, and continue with the approved amount.', apps: [['tasks', 'Action Center'], ['mail', 'Email']] },
-  { tag: 'Connector', title: 'REST API connector', body: 'Call any REST endpoint with stored credentials, query parameters, headers, and JSON bodies.', apps: [['code', 'HTTP']] },
-  { tag: 'Ready to go', title: 'Process queue items with retries', body: 'Get transaction items from a work queue, process each one, and retry business exceptions.', apps: [['queue', 'Queues'], ['robot', 'Robot']] },
-  { tag: 'Template', title: 'Fill a desktop form from a spreadsheet', body: 'Launch a Windows app, type values into fields by automation ID, and save every record.', apps: [['monitor', 'Windows desktop'], ['table', 'Google Sheets']] },
-];
+// Templates are real workflow definitions (lib/workflowTemplates.js, validated and run in
+// backend/test/templates.test.js); "Try it" opens the designer pre-filled with their steps.
+export const TEMPLATES = WORKFLOW_TEMPLATES.map((item) => ({ ...item, to: `/workflows/new?template=${item.key}` }));
 
-const MARKETPLACE = [
-  { tag: 'Activity pack', title: 'Web automation', body: 'Browser activities powered by Playwright: click, type, extract tables, and take screenshots.', apps: [['globe', 'Web automation']] },
-  { tag: 'Activity pack', title: 'Windows desktop', body: 'UI Automation activities for classic desktop apps: launch, attach, click, and type.', apps: [['monitor', 'Windows desktop']] },
-  { tag: 'Activity pack', title: 'Google Sheets', body: 'Read and write ranges and append rows through a service-account connection.', apps: [['table', 'Google Sheets']] },
-  { tag: 'Workflow template', title: 'Attended approval flow', body: 'A human-in-the-loop flow with an Action Center task and outcome branches.', apps: [['tasks', 'Action Center']] },
-  { tag: 'Connector', title: 'Database', body: 'Select, insert, update, and run parameterized SQL against MySQL and MariaDB.', apps: [['database', 'Database']] },
-  { tag: 'Extraction model', title: 'Invoices', body: 'Extracts invoice number, dates, vendor, and totals from scanned images and PDFs.', apps: [['document', 'Document Understanding']] },
-];
+// Activity packs come straight from the designer's activity catalog, with real counts.
+const MARKETPLACE = activityPacks().map((pack) => ({ ...pack, meta: `${pack.count} ${pack.count === 1 ? 'activity' : 'activities'}` }));
 
+// Features shipped in October 2026 (see the git history), each linking to its working page.
 const WHATS_NEW = [
-  { title: 'Web recorder', body: 'Record clicks and typing in the browser and turn them into workflow steps.', link: 'Open the recorder', to: '/workflows/new', date: 'Oct 2026' },
-  { title: 'Action Center', body: 'Tasks pause a job until a person approves, rejects, or completes a form.', link: 'Try Action Center', to: '/tasks', date: 'Oct 2026' },
-  { title: 'Document Understanding', body: 'Read invoices and receipts with OCR and field extraction.', link: 'Build with documents', to: '/workflows/new', date: 'Oct 2026' },
+  { title: 'Redesigned Workflow Designer', body: 'Pan and zoom canvas, drag-and-drop activities, undo and redo, and code-style JSON properties.', link: 'Open the Designer', to: '/workflows/new', date: 'Oct 2026' },
+  { title: 'BPMN processes', body: 'Model processes in BPMN 2.0, then publish and run them on the Flow engine with a live run monitor.', link: 'Model a process', to: '/studio?view=processes', date: 'Oct 2026' },
+  { title: 'Cases', body: 'Case types with stages, tasks, SLAs, and escalations, plus a case workspace and board.', link: 'Open Cases', to: '/cases', date: 'Oct 2026' },
+  { title: 'Apps', body: 'Build custom interfaces with data sources and actions, and share them with your team.', link: 'Browse apps', to: '/apps', date: 'Oct 2026' },
+  { title: 'Agents', body: 'AI agents that call workflows, people, and APIs as tools, with a test chat and traces.', link: 'Build an agent', to: '/studio?view=agents', date: 'Oct 2026' },
+  { title: 'Flow', body: 'Orchestrate robots, people, and APIs in one process with an editor and run monitor.', link: 'Open Flows', to: '/studio?view=flows', date: 'Oct 2026' },
 ];
 
 const RESOURCES = [
@@ -129,14 +123,17 @@ function AppTile({ icon, label }) {
 
 export function ShowcaseCard({ item }) {
   return (
-    <Link to="/workflows/new" className={`${card} ${lift} group flex h-full flex-col p-5`} aria-label={`Try it: ${item.title}`}>
-      <span className={`${tag} self-start`}>{item.tag}</span>
+    <Link to={item.to || '/workflows/new'} className={`${card} ${lift} group flex h-full flex-col p-5`} aria-label={`${item.cta || 'Try it'}: ${item.title}`}>
+      <span className="flex items-center gap-2">
+        <span className={tag}>{item.tag}</span>
+        {item.meta && <span className="text-[11.5px] font-medium text-slate-500">{item.meta}</span>}
+      </span>
       <h3 className="mt-3 text-[14.5px] font-semibold leading-snug text-ink">{item.title}</h3>
       <p className="mt-1.5 line-clamp-2 text-[13px] leading-5 text-slate-500">{item.body}</p>
       <div className="mt-auto flex items-center justify-between pt-5">
         <div className="flex items-center gap-1.5">{item.apps.map(([icon, label]) => <AppTile key={label} icon={icon} label={label} />)}</div>
         <span className="inline-flex items-center gap-1 text-[13px] font-medium text-slate-500 transition-colors group-hover:text-ember">
-          Try it<Icon name="arrow" className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+          {item.cta || 'Try it'}<Icon name="arrow" className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
         </span>
       </div>
     </Link>
@@ -409,15 +406,15 @@ export default function HomePage() {
             </Section>
           )}
 
-          <Section title="Start from popular templates" badge="Preview">
+          <Section title="Start from a template">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {TEMPLATES.map((item) => <ShowcaseCard key={item.title} item={item} />)}
+              {TEMPLATES.map((item) => <ShowcaseCard key={item.key} item={item} />)}
             </div>
           </Section>
 
-          <Section title="Trending on Marketplace" badge="Preview">
+          <Section title="Activity packs">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {MARKETPLACE.map((item) => <ShowcaseCard key={item.title} item={item} />)}
+              {MARKETPLACE.map((item) => <ShowcaseCard key={item.key} item={item} />)}
             </div>
           </Section>
 

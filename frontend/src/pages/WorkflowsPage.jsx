@@ -7,6 +7,7 @@ import PropertyPanel from '../components/PropertyPanel.jsx';
 import RecorderModal from '../components/RecorderModal.jsx';
 import { ActivityIcon, CodeField, DropIllustration, Glyph } from '../components/DesignerChrome.jsx';
 import { Icon } from '../components/brand.jsx';
+import { templateByKey } from '../lib/workflowTemplates.js';
 
 const START_STEPS = [
   { id: 'start', type: 'start', name: 'Start', config: { designer: { x: 48, y: 36 } }, errorPolicy: 'fail', next: 'end' },
@@ -100,15 +101,17 @@ function WorkflowDesigner() {
   const [workflowId, setWorkflowId] = useState(params.id || '');
   const [workflow, setWorkflow] = useState(null);
   // Studio entry points: ?projectId= preselects the project, ?palette= pre-filters the activity
-  // palette, and ?import=codegen opens the recorder on its Playwright codegen import tab.
+  // palette, ?import=codegen opens the recorder on its Playwright codegen import tab, and
+  // ?template=<key> pre-fills a new workflow from lib/workflowTemplates.js (Home / Studio cards).
   const query = new URLSearchParams(useLocation().search);
-  const [form, setForm] = useState({ projectId: params.id ? '' : (query.get('projectId') || ''), name: '', description: '', executionType: 'native' });
-  const [retryPolicy, setRetryPolicy] = useState({ maxAttempts: 1, backoffSeconds: 0 });
+  const [template] = useState(() => (params.id ? null : templateByKey(query.get('template'))));
+  const [form, setForm] = useState({ projectId: params.id ? '' : (query.get('projectId') || ''), name: template?.title || '', description: template?.body || '', executionType: 'native' });
+  const [retryPolicy, setRetryPolicy] = useState(template ? { ...template.retryPolicy } : { maxAttempts: 1, backoffSeconds: 0 });
   const [configText, setConfigText] = useState('{}');
-  const [steps, setSteps] = useState(START_STEPS);
+  const [steps, setSteps] = useState(() => (template ? structuredClone(template.steps) : START_STEPS));
   const [selected, setSelected] = useState(0);
   const [loadKey, setLoadKey] = useState(0);
-  const [input, setInput] = useState('{\n  "rows": []\n}');
+  const [input, setInput] = useState(template ? JSON.stringify(template.input || {}, null, 2) : '{\n  "rows": []\n}');
   const [validation, setValidation] = useState([]);
   const [connections, setConnections] = useState([]);
   const [picks, setPicks] = useState([]);
@@ -266,9 +269,12 @@ function WorkflowDesigner() {
   const fitKey = useRef(-1);
   useEffect(() => {
     if (fitKey.current === loadKey) return;
-    fitKey.current = loadKey;
-    const frame = requestAnimationFrame(() => fit(1));
-    return () => cancelAnimationFrame(frame);
+    // Mark the key as fitted inside the callback: StrictMode runs effects twice and cancels the
+    // first frame, so marking it up front would skip the fit entirely.
+    const frame = requestAnimationFrame(() => { fitKey.current = loadKey; fit(1); });
+    // On first mount (a template or a blank workflow) the shell may still be settling; fit again.
+    const settle = loadKey === 0 ? setTimeout(() => fit(1), 300) : null;
+    return () => { cancelAnimationFrame(frame); clearTimeout(settle); };
   }, [loadKey, fit]);
 
   const zoomBy = (factor) => setView((current) => {
@@ -407,7 +413,9 @@ function WorkflowDesigner() {
 
   const writable = canWrite(user?.role);
   const onlyEnds = steps.every((item) => item.type === 'start' || item.type === 'end');
-  const visibleGroups = ACTIVITY_GROUPS.map((group) => [group, ACTIVITIES.filter(([type, label, g]) => g === group && type !== 'start' && label.toLowerCase().includes(paletteFilter.toLowerCase()))]).filter(([, items]) => items.length);
+  // ?palette=Web (an exact group name, as Home's activity-pack cards link) shows that whole group.
+  const paletteGroup = ACTIVITY_GROUPS.find((group) => group.toLowerCase() === paletteFilter.trim().toLowerCase()) || '';
+  const visibleGroups = ACTIVITY_GROUPS.map((group) => [group, ACTIVITIES.filter(([type, label, g]) => g === group && type !== 'start' && (paletteGroup ? g === paletteGroup : label.toLowerCase().includes(paletteFilter.toLowerCase())))]).filter(([, items]) => items.length);
   const field = 'h-8 rounded-lg border border-[#E2DCD5] bg-white px-2.5 text-[13px] text-[#172125] focus:border-[#E9521F] focus:outline-none focus:ring-2 focus:ring-[#E9521F]/15 disabled:bg-[#FAF9F7] disabled:text-slate-500';
   const toolBtn = 'inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E2DCD5] bg-white px-2.5 text-[13px] font-semibold text-[#172125] shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-colors hover:border-[#D6CFC7] hover:bg-[#F6F4F1] disabled:cursor-not-allowed disabled:opacity-50';
   const iconBtn = 'grid h-8 w-8 place-items-center rounded-lg text-[#4A555C] transition-colors hover:bg-[#F6F4F1] hover:text-[#172125] disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent';
@@ -448,6 +456,7 @@ function WorkflowDesigner() {
       </div>
       {error && <p className="shrink-0 border-b border-[#F4C7C1] bg-[#FEF3F2] px-4 py-1.5 text-[13px] text-[#B42318]" role="alert">{error}</p>}
       {message && <p className="shrink-0 border-b border-[#CDE9D6] bg-[#F2FAF4] px-4 py-1.5 text-[13px] text-[#1F6B3A]" role="status">{message}</p>}
+      {template && !workflowId && !message && <p className="shrink-0 border-b border-[#F6DCCF] bg-[#FFF6F2] px-4 py-1.5 text-[13px] text-[#8A3412]" data-testid="template-note">Started from the “{template.title}” template. Choose a project, review the steps, then Save.</p>}
 
       <div className={`grid min-h-0 flex-1 gap-3 p-3 grid-rows-[auto_minmax(420px,1fr)_auto] lg:grid-rows-1 ${paletteOpen ? (wideProps ? 'lg:grid-cols-[248px_minmax(0,1fr)_440px]' : 'lg:grid-cols-[248px_minmax(0,1fr)_330px]') : (wideProps ? 'lg:grid-cols-[44px_minmax(0,1fr)_440px]' : 'lg:grid-cols-[44px_minmax(0,1fr)_330px]')}`}>
         {/* Activities */}
