@@ -10,7 +10,7 @@
 //   auto         css, or xpath when it starts with / or (
 import { AppError } from '../../lib/errors.js';
 
-export const SELECTOR_TYPES = ['auto', 'css', 'xpath', 'text', 'role', 'label', 'placeholder', 'testid'];
+export const SELECTOR_TYPES = ['auto', 'css', 'xpath', 'text', 'role', 'label', 'placeholder', 'testid', 'image'];
 
 export function normalizeSelector(config = {}) {
   const selector = typeof config.selector === 'string' ? config.selector.trim() : '';
@@ -27,6 +27,7 @@ export function toLocator(page, config = {}) {
   const root = config.frame ? page.frameLocator(config.frame) : page;
   const exact = config.exact === true;
   let locator;
+  if (selectorType === 'image') throw new AppError(400, 'VALIDATION', 'Image targeting is only supported on Click');
   if (selectorType === 'css') locator = root.locator(`css=${selector}`);
   else if (selectorType === 'xpath') locator = root.locator(`xpath=${selector}`);
   else if (selectorType === 'text') locator = root.getByText(selector, { exact });

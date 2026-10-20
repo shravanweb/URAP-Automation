@@ -118,10 +118,41 @@ describe('flow definition validation', () => {
     expect(messages.some((message) => message.includes('needs at least two outgoing branches'))).toBe(true);
     expect(messages.some((message) => message.includes('exactly one outgoing'))).toBe(true);
     expect(validateDefinition({ nodes: [], edges: [] }).errors.map((item) => item.message)).toEqual(['Add a Start step', 'Add an End step']);
+    expect(messages.some((message) => message.includes('Only a Loop step'))).toBe(true);
   });
 });
 
 describe('flows API and engine', () => {
+  it('repeats a loop a fixed number of times and then takes Done', async () => {
+    const definition = {
+      nodes: [
+        { id: 'start', type: 'start', name: 'Start', x: 0, y: 0, config: { trigger: 'manual' } },
+        { id: 'again', type: 'loop', name: 'Again', x: 1, y: 0, config: { maxIterations: 3 } },
+        { id: 'gate', type: 'decision', name: 'Spin', x: 2, y: 0, config: {} },
+        { id: 'end', type: 'end', name: 'End', x: 3, y: 0, config: {} },
+      ],
+      edges: [
+        { id: 'e1', from: 'start', to: 'again' },
+        { id: 'e2', from: 'again', to: 'gate', label: 'Repeat' },
+        { id: 'e3', from: 'again', to: 'end', label: 'Done', isDefault: true },
+        { id: 'e4', from: 'gate', to: 'again', label: 'Back', isDefault: true },
+        { id: 'e5', from: 'gate', to: 'end', label: 'Stop', condition: { left: 'vars.never', op: 'eq', right: 'yes' } },
+      ],
+      variables: [],
+    };
+    expect(validateDefinition(definition).errors).toEqual([]);
+    const flow = await createFlow('Loop three times', definition);
+    expect(flow.validation.errors).toEqual([]);
+    await publishFlow(flow.id);
+    const started = await request(app).post(`/api/flows/${flow.id}/run`).set(as(admin)).send({});
+    expect(started.status).toBe(202);
+    const detail = await runDetail(started.body.data.id);
+    expect(detail.status).toBe('SUCCEEDED');
+    const loops = detail.nodes.filter((node) => node.nodeId === 'again' && node.status === 'SUCCEEDED');
+    expect(loops.length).toBe(4);
+    expect(nodeStatus(detail, 'end')).toBe('SUCCEEDED');
+  });
+
   it('runs robot -> human -> decision -> end and records history', async () => {
     const flow = await createFlow('Invoice approval', approvalFlow(scoreWorkflow));
     expect(flow.validation.errors).toEqual([]);

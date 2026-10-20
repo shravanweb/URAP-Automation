@@ -41,6 +41,7 @@ import { registerInsightsRoutes } from './insightsRoutes.js';
 import { registerPlatformRoutes } from './platformRoutes.js';
 import { requestContextMiddleware } from '../lib/requestContext.js';
 import { kickAgentRun } from '../agent/runtime.js';
+import { applyPasswordReset, emailConfigured, requestPasswordReset } from '../services/passwordResetMail.js';
 import { PROVIDERS } from '../agent/providers.js';
 import { advanceRun } from '../flow/engine.js';
 import { notifyCase } from '../case/engine.js';
@@ -343,8 +344,26 @@ export function createApp(options = {}) {
 
   // Public settings the sign-in and sign-up pages need before anyone is signed in.
   app.get('/api/auth/options', (_req, res) => {
-    res.json({ data: { allowSignup: cfg.allowSignup !== false, passwordReset: 'administrator', passwordMinLength: 12 } });
+    res.json({ data: { allowSignup: cfg.allowSignup !== false, passwordReset: emailConfigured(cfg) ? 'email' : 'administrator', passwordMinLength: 12 } });
   });
+
+  app.post('/api/auth/forgot-password', authLimit, wrap(async (req, res) => {
+    const body = z.object({ email: z.string().trim().email() }).safeParse(req.body);
+    if (!body.success) throw validationError(body.error.issues);
+    const configured = emailConfigured(cfg);
+    if (configured) await requestPasswordReset(pool, cfg, body.data.email.toLowerCase()).catch(() => {});
+    res.json({ data: { accepted: true, emailConfigured: configured } });
+  }));
+
+  app.post('/api/auth/reset-password', authLimit, wrap(async (req, res) => {
+    const body = z.object({
+      token: z.string().min(20, 'This reset link is invalid or has expired. Request a new one.').max(200),
+      password: z.string().min(12).max(200).refine((value) => /[A-Za-z]/.test(value) && /\d/.test(value), 'Password must contain letters and numbers'),
+    }).safeParse(req.body);
+    if (!body.success) throw validationError(body.error.issues);
+    const result = await applyPasswordReset(pool, cfg, body.data.token, body.data.password);
+    res.json({ data: { reset: true, email: result.email } });
+  }));
 
   app.post('/api/auth/signup', signupLimit, wrap(async (req, res) => {
     if (cfg.allowSignup === false) {

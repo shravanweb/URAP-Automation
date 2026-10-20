@@ -3,8 +3,8 @@
 // Agent configuration: defaults, validation, and the tool (function) schemas sent to the model.
 // Pure module, shared with the frontend (frontend/src/lib/agentConfig.js is a copy; keep in sync).
 
-export const AGENT_TYPES = ['conversational', 'autonomous'];
-export const TOOL_TYPES = ['workflow', 'task', 'case', 'http', 'query'];
+export const AGENT_TYPES = ['conversational', 'autonomous', 'coded'];
+export const TOOL_TYPES = ['workflow', 'task', 'case', 'http', 'query', 'code'];
 export const FIELD_TYPES = ['string', 'number', 'boolean', 'object'];
 export const QUERY_RESOURCES = ['jobs', 'queue_items', 'tasks', 'workflows'];
 export const TASK_ROLES = ['administrator', 'project_manager', 'automation_developer', 'operator'];
@@ -16,6 +16,23 @@ const NAME = /^[a-z][a-z0-9_]{1,47}$/;
 const FIELD = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
 
 export function defaultAgentConfig(type = 'conversational') {
+  if (type === 'coded') {
+    return {
+      instructions: 'Describe what this script does for the people who maintain it.',
+      connectionId: null,
+      model: '',
+      temperature: 0.2,
+      maxSteps: 1,
+      maxTokens: 1024,
+      maxTotalTokens: 50000,
+      toolTimeoutMinutes: 1,
+      greeting: '',
+      source: "return { summary: String(input.request || '') };",
+      tools: [],
+      inputSchema: [{ name: 'request', type: 'string', description: 'What the script should handle', required: true }],
+      outputSchema: [{ name: 'summary', type: 'string', description: 'Short result', required: true }],
+    };
+  }
   return {
     instructions: type === 'autonomous'
       ? 'You are an operations agent. Use the tools to complete the task described in the input, then submit the output.'
@@ -35,7 +52,7 @@ export function defaultAgentConfig(type = 'conversational') {
 }
 
 export function newTool(type, existing = []) {
-  const base = { workflow: 'run_workflow', task: 'ask_a_person', case: 'open_case', http: 'call_api', query: 'look_up_project_data' }[type] || 'tool';
+  const base = { workflow: 'run_workflow', task: 'ask_a_person', case: 'open_case', http: 'call_api', query: 'look_up_project_data', code: 'run_script' }[type] || 'tool';
   const names = new Set(existing.map((tool) => tool.name));
   let name = base;
   for (let n = 2; names.has(name); n += 1) name = `${base}_${n}`;
@@ -49,6 +66,7 @@ export function newTool(type, existing = []) {
     case 'case': return { ...common, description: 'Opens a case of a published case type with the given fields and returns its reference.', caseTypeId: '' };
     case 'http': return { ...common, description: 'Calls the project REST API connection.', connectionId: '', method: 'GET', pathPrefix: '/' };
     case 'query': return { ...common, description: 'Looks up recent jobs, queue items, tasks, or workflows in this project.', resources: ['jobs', 'tasks'] };
+    case 'code': return { ...common, description: 'Runs a sandboxed JavaScript function and returns JSON.', source: 'return { ok: true, echo: args };', inputs: [] };
     default: return common;
   }
 }
@@ -93,6 +111,8 @@ export function buildToolSchemas(config, agentType = 'conversational') {
           description: tool.description || 'Look up project data',
           parameters: { type: 'object', properties: { resource: { type: 'string', enum: tool.resources?.length ? tool.resources : QUERY_RESOURCES }, status: { type: 'string', description: 'Optional status filter' }, limit: { type: 'number', description: 'How many rows (max 25)' } }, required: ['resource'] },
         };
+      case 'code':
+        return { name: tool.name, description: `${tool.description || 'Run a script'} The function receives args and returns JSON. It cannot read files or use the network.`, parameters: fieldProperties(tool.inputs) };
       default:
         return null;
     }
@@ -181,6 +201,17 @@ export function validateAgentConfig(config, lookups = null, agentType = 'convers
     if (tool.type === 'query') {
       if (!Array.isArray(tool.resources) || !tool.resources.length || tool.resources.some((item) => !QUERY_RESOURCES.includes(item))) errors.push({ ...where, message: `${label}: pick what it may look up` });
     }
+    if (tool.type === 'code') {
+      if (!String(tool.source || '').trim()) errors.push({ ...where, message: `${label}: write the script` });
+      else if (String(tool.source).length > 8000) errors.push({ ...where, message: `${label}: scripts are limited to 8,000 characters` });
+      validateFields(tool.inputs || [], where.field, `${label} inputs`, errors);
+    } else if (agentType === 'coded') {
+      errors.push({ ...where, message: `${label}: coded agents can only use JavaScript tools` });
+    }
+  }
+  if (agentType === 'coded') {
+    if (!String(config.source || '').trim()) errors.push({ field: 'source', message: 'Write the script that runs when this agent starts' });
+    else if (String(config.source).length > 8000) errors.push({ field: 'source', message: 'Scripts are limited to 8,000 characters' });
   }
   validateFields(config.inputSchema || [], 'inputSchema', 'Input', errors);
   validateFields(config.outputSchema || [], 'outputSchema', 'Output', errors);

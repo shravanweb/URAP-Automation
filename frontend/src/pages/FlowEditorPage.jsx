@@ -12,7 +12,7 @@ import { timeAgo } from '../layouts/CloudLayout.jsx';
 
 export const PALETTE = [
   ['Activities', ['robot', 'agent', 'human', 'case', 'http', 'timer']],
-  ['Logic', ['decision', 'parallel', 'join']],
+  ['Logic', ['decision', 'loop', 'parallel', 'join']],
   ['Events', ['end']],
 ];
 export const OP_LABELS = { eq: 'equals', neq: 'does not equal', gt: 'is greater than', gte: 'is at least', lt: 'is less than', lte: 'is at most', contains: 'contains', empty: 'is empty', not_empty: 'is not empty' };
@@ -35,6 +35,7 @@ export function newNode(type, x, y, definition) {
     case: { caseTypeId: '', title: '', fields: {}, priority: '', waitForResolution: false, outputVar: `case${index}` },
     http: { method: 'GET', path: '/', outputVar: `response${index}`, retries: 0 },
     timer: { seconds: 60 },
+    loop: { maxIterations: 3 },
   }[type] || {};
   return { id, type, name: `${meta.label}${index > 1 ? ` ${index}` : ''}`, x, y, config };
 }
@@ -302,6 +303,29 @@ function NodeProperties({ node, definition, lookups, disabled, onNode, onEdge, o
           <div className="grid grid-cols-2 gap-3">
             <Field label="Output variable" hint="{ status, data, headers }"><input className={`${input} font-mono`} disabled={disabled} value={config.outputVar || ''} onChange={(event) => set({ outputVar: event.target.value })} /></Field>
             <Field label="Retries"><input type="number" min={0} max={5} className={input} disabled={disabled} value={config.retries ?? 0} onChange={(event) => set({ retries: Number(event.target.value) })} /></Field>
+          </div>
+        </>
+      )}
+
+      {node.type === 'loop' && (
+        <>
+          <Field label="Max iterations" hint="The Done connection runs after this many repeats, or sooner if the list or condition ends.">
+            <input type="number" min={1} max={50} className={input} disabled={disabled} value={config.maxIterations ?? 3} onChange={(event) => set({ maxIterations: Number(event.target.value) })} />
+          </Field>
+          <Field label="List to walk (optional)" hint="A variable path such as vars.rows. Each item is stored in the item variable.">
+            <input className={`${input} font-mono`} disabled={disabled} value={config.source || ''} placeholder="vars.rows" onChange={(event) => set({ source: event.target.value })} />
+          </Field>
+          <Field label="Item variable" hint="Set on each repeat when a list is given.">
+            <input className={`${input} font-mono`} disabled={disabled} value={config.itemVar || ''} placeholder="item" onChange={(event) => set({ itemVar: event.target.value })} />
+          </Field>
+          <p className="text-[12.5px] leading-5 text-slate-500">Connect Repeat back to this step, and mark the other connection as Done (the default). The run stops after the limit even if Repeat is still connected.</p>
+          <div className="space-y-2">
+            {outgoing.map((edge) => (
+              <label key={edge.id} className="flex items-center gap-2 rounded-lg border border-[#ECE8E3] bg-[#FCFBFA] px-2.5 py-2 text-[12.5px] text-ink">
+                <input type="radio" className="accent-[#D63A0C]" name={`done-${node.id}`} disabled={disabled} checked={Boolean(edge.isDefault)} onChange={() => onEdge({ ...edge, isDefault: true, label: edge.label || 'Done' })} />
+                <span className="min-w-0 flex-1">{edge.isDefault ? 'Done' : 'Repeat'} → {name(edge.to)}</span>
+              </label>
+            ))}
           </div>
         </>
       )}
@@ -679,7 +703,14 @@ export default function FlowEditorPage() {
                 flow={flow}
                 disabled={!writable}
                 onNode={(node) => change({ ...definition, nodes: definition.nodes.map((item) => (item.id === node.id ? node : item)) })}
-                onEdge={(edge) => change({ ...definition, edges: definition.edges.map((item) => (item.id === edge.id ? edge : item)) })}
+                onEdge={(edge) => change({
+                  ...definition,
+                  edges: definition.edges.map((item) => {
+                    if (item.id === edge.id) return edge;
+                    if (edge.isDefault && item.from === edge.from && definition.nodes.find((node) => node.id === edge.from)?.type === 'loop') return { ...item, isDefault: false };
+                    return item;
+                  }),
+                })}
                 onDelete={remove}
               />
             ) : selectedEdge ? (

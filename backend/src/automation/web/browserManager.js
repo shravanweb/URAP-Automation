@@ -6,6 +6,7 @@ import path from 'node:path';
 import { AppError } from '../../lib/errors.js';
 import { resolveInside } from '../../lib/paths.js';
 import { describeSelector, toLocator } from './selectors.js';
+import { findTemplate } from './imageMatch.js';
 
 const ENGINES = ['chromium', 'firefox', 'webkit'];
 
@@ -112,13 +113,28 @@ export function createBrowserManager({ cfg = {}, storageRoot, playwright = null 
     }
   }
 
-  const click = (config) => withElement(config, 'Click', async (locator, page) => {
-    const options = { button: config.button || 'left', clickCount: Number(config.clickCount) || 1, timeout: Number(config.timeoutMs) || undefined };
-    if (config.modifiers?.length) options.modifiers = config.modifiers;
-    await locator.click(options);
-    if (config.waitForNavigation) await page.waitForLoadState(config.waitForNavigation === true ? 'load' : config.waitForNavigation);
-    return { clicked: describeSelector(config), url: page.url() };
-  });
+  const click = async (config) => {
+    if (config.selectorType === 'image') {
+      const { page } = session(config.session);
+      const templatePath = resolveInside(storageRoot, String(config.selector || ''));
+      let template;
+      try { template = await fs.readFile(templatePath); } catch { throw new AppError(400, 'FILE_NOT_FOUND', `Template image not found: ${config.selector}`); }
+      const shot = await page.screenshot({ type: 'png' });
+      const found = await findTemplate(shot, template, { threshold: Number(config.imageThreshold) || 0.18 });
+      if (!found) throw new AppError(504, 'ELEMENT_NOT_FOUND', `Click image:${config.selector}: the template was not found on the page`);
+      const options = { button: config.button || 'left', clickCount: Number(config.clickCount) || 1 };
+      await page.mouse.click(found.x + found.width / 2, found.y + found.height / 2, options);
+      if (config.waitForNavigation) await page.waitForLoadState(config.waitForNavigation === true ? 'load' : config.waitForNavigation);
+      return { clicked: `image:${config.selector}`, ...found, url: page.url() };
+    }
+    return withElement(config, 'Click', async (locator, page) => {
+      const options = { button: config.button || 'left', clickCount: Number(config.clickCount) || 1, timeout: Number(config.timeoutMs) || undefined };
+      if (config.modifiers?.length) options.modifiers = config.modifiers;
+      await locator.click(options);
+      if (config.waitForNavigation) await page.waitForLoadState(config.waitForNavigation === true ? 'load' : config.waitForNavigation);
+      return { clicked: describeSelector(config), url: page.url() };
+    });
+  };
 
   const typeInto = (config) => withElement(config, 'Type into', async (locator) => {
     const text = config.text == null ? '' : String(config.text);

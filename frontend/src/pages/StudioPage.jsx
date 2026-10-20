@@ -355,7 +355,7 @@ export function NewFlowDialog({ projects, template = 'blank', onClose, onCreated
 export const AGENT_TYPE_OPTIONS = [
   { key: 'conversational', icon: 'users', title: 'Conversational', body: 'Chats with people and uses tools to answer and act.' },
   { key: 'autonomous', icon: 'bolt', title: 'Autonomous', body: 'Takes an input, works through the task with tools, returns an output. Usable as a flow step.' },
-  { key: 'coded', icon: 'code', title: 'Coded', body: 'Your own JavaScript tools. Coming later: needs a hardened sandbox first.', disabled: true },
+  { key: 'coded', icon: 'code', title: 'Coded', body: 'Your own JavaScript. It runs in a sandbox with no files, network, or secrets.' },
 ];
 
 export function NewAgentDialog({ projects, onClose, onCreated, onNewProject }) {
@@ -873,7 +873,7 @@ export function AgentsTable({ agents, search }) {
                 </div>
               </td>
               <td className="px-3 py-3 text-slate-600">{agent.projectName}</td>
-              <td className="px-3 py-3 text-slate-600">{agent.agentType === 'autonomous' ? 'Autonomous' : 'Conversational'}</td>
+              <td className="px-3 py-3 text-slate-600">{agent.agentType === 'autonomous' ? 'Autonomous' : agent.agentType === 'coded' ? 'Coded' : 'Conversational'}</td>
               <td className="px-3 py-3"><div className="flex items-center gap-2"><StatusPill status={agent.status} />{agent.versionNumber ? <span className="text-xs tabular-nums text-slate-400">v{agent.versionNumber}</span> : null}</div></td>
               <td className="px-3 py-3 tabular-nums text-slate-600">{agent.config?.tools?.length || 0}</td>
               <td className="px-3 py-3">{agent.lastRun ? <Link to={`/studio/agents/${agent.id}/runs/${agent.lastRun.id}`} className="inline-flex items-center gap-2 hover:opacity-80"><StatusPill status={agent.lastRun.status} /><span className="text-xs text-slate-500">{timeAgo(agent.lastRun.startedAt)}</span></Link> : <span className="text-slate-400">Never run</span>}</td>

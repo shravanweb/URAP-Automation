@@ -278,6 +278,8 @@ function validateWebStep(step, config, need, errors) {
     checkUrlValue(step, config, errors);
   }
   if (['browser_click', 'browser_type', 'browser_get_text', 'browser_wait_for', 'browser_select_option', 'browser_extract_table'].includes(step.type)) checkSelector(step, config, errors);
+  if (config.selectorType === 'image' && step.type !== 'browser_click') push(errors, `${step.id}.config.selectorType`, 'Image targeting is only available on Click');
+  if (config.selectorType === 'image' && badPath(config.selector)) push(errors, `${step.id}.config.selector`, 'The template image path must be relative to project storage and cannot contain ..');
   if (step.type === 'browser_screenshot' && config.selector) checkSelector(step, config, errors);
   if (step.type === 'browser_type' && (config.text === undefined || config.text === '') && !config.credentialId && !config.key && !config.pressEnter) push(errors, `${step.id}.config.text`, 'text, a credential, or key is required');
   if (step.type === 'browser_wait_for' && config.state && !['visible', 'hidden', 'attached', 'detached'].includes(config.state)) push(errors, `${step.id}.config.state`, 'state must be visible, hidden, attached, or detached');
