@@ -38,7 +38,8 @@ describe('pages render for a signed-in administrator', () => {
   it('pre-fills the designer from a template and filters the palette to a pack', () => {
     const designer = render('/workflows/new?template=purchase-approval', '/workflows/new', <WorkflowsPage mode="builder" />);
     for (const text of ['Route a purchase request for approval', 'Manager approval', 'Approved?', 'Notify approved', 'Notify rejected', 'Started from the']) expect(designer).toContain(text);
-    expect(designer).toContain('&quot;requestedBy&quot;');
+    // No sample input is pre-filled: Run asks for real values (RunInputDialog).
+    for (const sample of ['Laptop', 'alex@example.com', '1200']) expect(designer).not.toContain(sample);
     const web = render('/workflows/new?palette=Web', '/workflows/new', <WorkflowsPage mode="builder" />);
     expect(web).toContain('Extract Table Data');
     expect(web).not.toContain('Send Hotkey');

@@ -62,7 +62,9 @@ describe('workflow templates', () => {
       fs.mkdirSync(path.join(root, 'in'));
       fs.writeFileSync(path.join(root, 'in/customers.csv'), 'name,email\nAsha, ASHA@example.com \nBen,ben@example.com\nAsha again,asha@example.com\nNo Email,\n,cat@example.com\n');
       const calls = { tasks: [], notifications: [], statuses: [], web: [], desktop: [] };
-      const result = await executeWorkflow(templateDefinition(template), template.input, mockServices(root, calls));
+      // Templates ship with no input values; the test types values like a person would in the Run dialog.
+      const input = Object.fromEntries((template.inputFields || []).map((field) => [field.name, field.type === 'number' ? 10 : `test ${field.name}`]));
+      const result = await executeWorkflow(templateDefinition(template), input, mockServices(root, calls));
       expect(result.status, `${template.key}: ${JSON.stringify(result.error)}`).toBe('SUCCEEDED');
       if (template.key === 'invoice-to-csv') {
         const csv = fs.readFileSync(path.join(root, 'out/invoice-fields.csv'), 'utf8');
@@ -73,8 +75,8 @@ describe('workflow templates', () => {
         expect(fs.readFileSync(path.join(root, 'out/web-table.csv'), 'utf8')).toBe('Company,Country\nAlfreds,Germany\n');
       }
       if (template.key === 'purchase-approval') {
-        expect(calls.tasks[0].title).toBe('Approve purchase: Laptop');
-        expect(calls.notifications).toEqual([expect.objectContaining({ subject: 'Purchase approved', message: 'Laptop approved for 1100' })]);
+        expect(calls.tasks[0].title).toBe('Approve purchase: test item');
+        expect(calls.notifications).toEqual([expect.objectContaining({ subject: 'Purchase approved', message: 'test item approved for 1100' })]);
       }
       if (template.key === 'queue-transactions') {
         expect(calls.statuses).toEqual([['q1', 'SUCCESSFUL', null], ['q2', 'FAILED', 'business']]);
@@ -85,7 +87,7 @@ describe('workflow templates', () => {
       }
       if (template.key === 'notepad-note') {
         expect(calls.desktop).toEqual(['desktop_open_app', 'desktop_type']);
-        expect(result.output.summary.log.message).toBe('Typed 15 characters');
+        expect(result.output.summary.log.message).toBe('Typed 9 characters');
       }
     }
   });

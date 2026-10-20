@@ -5,6 +5,7 @@ import { api, currentUser } from '../services/api.js';
 import { Icon } from '../components/brand.jsx';
 import { timeAgo } from '../layouts/CloudLayout.jsx';
 import { WORKFLOW_TEMPLATES, activityPacks } from '../lib/workflowTemplates.js';
+import { useRunWorkflow } from '../components/RunInputDialog.jsx';
 
 // Signed-in home, laid out like an Automation Cloud home page in a light theme. Everything
 // counted or listed comes from the API; template cards open real, validated workflows in the
@@ -18,11 +19,32 @@ export function greeting(date = new Date()) {
   return 'Good evening';
 }
 
+// Restrained palette, Automation Cloud style: neutral warm-grey tiles with navy icons, URAP orange
+// (#FA4616 family) for primary actions and featured items, and a subtle blue for info only.
+// Status colours live only in the small STATUS_DOT map below.
+const NEUTRAL = { tile: '#F5F2EE', fg: '#3B4A5E', wash: '#FBFAF8', ink: '#3B4A5E', chip: 'bg-[#F7F5F2] text-[#4A5568] border-[#ECE6DF]', ring: '#ECE6DF', dot: '#94A3B8' };
+const ORANGE = { tile: '#FFF1EA', fg: '#E03A0E', wash: '#FFF7F2', ink: '#E03A0E', chip: 'bg-[#FFF3EC] text-[#C2410C] border-[#FBDCCB]', ring: '#FBDCCB', dot: '#FA4616' };
+const BLUE = { tile: '#EEF3FB', fg: '#2F5FA8', wash: '#F6F9FD', ink: '#2F5FA8', chip: 'bg-[#F1F5FC] text-[#2F5FA8] border-[#DCE5F3]', ring: '#DCE5F3', dot: '#3A75D0' };
+export const ACCENTS = { neutral: NEUTRAL, orange: ORANGE, blue: BLUE };
+export function accentFor() { return NEUTRAL; }
+const STATUS_DOT = { Failed: '#D9382B', 'SLA breached': '#D9382B', Waiting: '#D99A1E', 'SLA at risk': '#D99A1E', Resolved: '#2E9E57', Running: '#3A75D0' };
+
+// Gradient icon tile used for every accented item on the page.
+export function AccentTile({ accent, icon, size = 'md', children }) {
+  const dims = { sm: 'h-8 w-8 rounded-lg', md: 'h-10 w-10 rounded-[11px]', lg: 'h-12 w-12 rounded-xl' }[size];
+  const glyph = { sm: 'h-4 w-4', md: 'h-5 w-5', lg: 'h-6 w-6' }[size];
+  return (
+    <span className={`grid shrink-0 place-items-center border shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] ${dims}`} style={{ background: accent.tile, color: accent.fg, borderColor: accent.ring }}>
+      {icon ? <Icon name={icon} className={glyph} strokeWidth={1.9} /> : <span className="text-[13px] font-semibold">{children}</span>}
+    </span>
+  );
+}
+
 const PRODUCTS = [
-  { to: '/studio', title: 'Studio', icon: 'studio', tile: 'bg-[#FFF1EC] text-[#D63A0C]', body: 'Design processes and workflows in a no-code canvas.' },
-  { to: '/settings', title: 'Robots', icon: 'robot', tile: 'bg-[#E8F6F6] text-[#127C81]', body: 'Register robots, watch their heartbeat, and manage access.' },
-  { to: '/tasks', title: 'Action Center', icon: 'tasks', tile: 'bg-[#F1EEFB] text-[#5B47B8]', body: 'Route approvals and forms to people, then resume the job.' },
-  { to: '/jobs', title: 'Orchestrator', icon: 'orchestrator', tile: 'bg-[#EAF1FB] text-[#2F5FA8]', body: 'Run, schedule, and monitor jobs and queues centrally.' },
+  { to: '/studio', title: 'Studio', icon: 'studio', accent: 'orange', body: 'Design processes and workflows in a no-code canvas.' },
+  { to: '/settings', title: 'Robots', icon: 'robot', accent: 'neutral', body: 'Register robots, watch their heartbeat, and manage access.' },
+  { to: '/tasks', title: 'Action Center', icon: 'tasks', accent: 'neutral', body: 'Route approvals and forms to people, then resume the job.' },
+  { to: '/jobs', title: 'Orchestrator', icon: 'orchestrator', accent: 'neutral', body: 'Run, schedule, and monitor jobs and queues centrally.' },
 ];
 
 // Templates are real workflow definitions (lib/workflowTemplates.js, validated and run in
@@ -41,6 +63,11 @@ const WHATS_NEW = [
   { title: 'Agents', body: 'AI agents that call workflows, people, and APIs as tools, with a test chat and traces.', link: 'Build an agent', to: '/studio?view=agents', date: 'Oct 2026' },
   { title: 'Flow', body: 'Orchestrate robots, people, and APIs in one process with an editor and run monitor.', link: 'Open Flows', to: '/studio?view=flows', date: 'Oct 2026' },
 ];
+
+const WHATS_NEW_STYLE = {
+  'Redesigned Workflow Designer': ['studio', 'orange'], 'BPMN processes': ['bpmn', 'blue'], Cases: ['briefcase', 'amber'],
+  Apps: ['app', 'neutral'], Agents: ['agent', 'neutral'], Flow: ['flow', 'neutral'],
+};
 
 const RESOURCES = [
   ['/workflows', 'Workflow Library', 'library'],
@@ -85,8 +112,8 @@ const PRIORITY = {
   low: 'bg-slate-100 text-slate-600',
 };
 
-const card = 'rounded-xl u-card';
-const lift = 'u-lift';
+const card = 'rounded-2xl border border-[#ECE8E3] bg-white shadow-[0_1px_2px_rgba(20,33,61,0.04),0_8px_24px_-18px_rgba(20,33,61,0.18)]';
+const lift = 'transition-[transform,box-shadow,border-color] duration-300 ease-out hover:-translate-y-1 hover:border-[#E3DDD6] hover:shadow-[0_2px_4px_rgba(20,33,61,0.04),0_22px_44px_-22px_rgba(20,33,61,0.30)] motion-reduce:hover:translate-y-0';
 const tag = 'inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500';
 const seeAll = 'group inline-flex items-center gap-1 text-[13px] font-medium text-slate-600 hover:text-ember';
 
@@ -94,16 +121,32 @@ function SeeAll({ to, children = 'See all' }) {
   return <Link to={to} className={seeAll}>{children}<Icon name="chevronRight" className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></Link>;
 }
 
+const SECTION_META = {
+  'Orchestrator services': ['orchestrator', 'blue', 'Your tenant, robots and how your jobs are running'],
+  'Your apps': ['app', 'neutral'],
+  Cases: ['briefcase', 'amber'],
+  'Start from a template': ['sparkle', 'orange', 'Real, validated workflows that open pre-filled in the designer'],
+  'Activity packs': ['grid', 'neutral', 'Building blocks from the designer, grouped by what they automate'],
+  'License allocations': ['shield', 'neutral', 'How your seats, robots and workflows are being used'],
+  Automations: ['studio', 'orange', 'Your projects and workflows, ready to run or edit'],
+  'Job history': ['clock', 'blue'],
+  'My actions': ['tasks', 'neutral'],
+};
+
 function Section({ title, badge, action, description, children }) {
+  const [icon, tone, fallback] = SECTION_META[title] || [];
   return (
-    <section className="mt-10">
-      <div className="mb-4 flex items-end justify-between gap-4">
-        <div>
-          <h2 className="flex items-center gap-2 text-[17px] font-semibold tracking-tight text-ink">
-            {title}
-            {badge && <span className={tag}>{badge}</span>}
-          </h2>
-          {description && <p className="mt-0.5 text-[13px] text-slate-500">{description}</p>}
+    <section className="mt-12">
+      <div className="mb-5 flex items-end justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {icon && <AccentTile accent={title === 'Start from a template' ? ORANGE : NEUTRAL} icon={icon} size="sm" />}
+          <div>
+            <h2 className="flex items-center gap-2 text-[17px] font-semibold tracking-[-0.015em] text-ink">
+              {title}
+              {badge && <span className={tag}>{badge}</span>}
+            </h2>
+            {(description || fallback) && <p className="mt-0.5 text-[13px] text-slate-500">{description || fallback}</p>}
+          </div>
         </div>
         {action}
       </div>
@@ -121,7 +164,58 @@ function AppTile({ icon, label }) {
   );
 }
 
+// Per-template accent: primary icon, gradient tile, tinted header wash, chips, badge and CTA colours.
+const TEMPLATE_THEMES = {
+  'invoice-to-csv': { icon: 'document', ...NEUTRAL },
+  'web-table-to-csv': { icon: 'globe', ...NEUTRAL },
+  'purchase-approval': { icon: 'tasks', ...NEUTRAL },
+  'queue-transactions': { icon: 'queue', ...NEUTRAL },
+  'clean-customer-csv': { icon: 'table', ...NEUTRAL },
+  'notepad-note': { icon: 'monitor', ...NEUTRAL },
+};
+
+function ThemedTemplateCard({ item, theme }) {
+  const cta = item.cta || 'Try it';
+  return (
+    <Link
+      to={item.to || '/workflows/new'}
+      aria-label={`${cta}: ${item.title}`}
+      className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-[#ECE8E3] bg-white shadow-[0_1px_2px_rgba(20,33,61,0.04),0_8px_24px_-16px_rgba(20,33,61,0.18)] transition-[transform,box-shadow,border-color] duration-300 ease-out hover:-translate-y-1 hover:shadow-[0_2px_4px_rgba(20,33,61,0.04),0_22px_44px_-20px_rgba(20,33,61,0.30)]"
+      style={{ '--accent-ring': ORANGE.ring }}
+    >
+      <span className="pointer-events-none absolute inset-0 rounded-2xl border border-transparent transition-colors duration-300 group-hover:border-[var(--accent-ring)]" aria-hidden="true" />
+      <div className="relative flex flex-1 flex-col p-5">
+        <div className="flex items-start justify-between gap-3">
+          <span className="grid h-12 w-12 place-items-center rounded-xl border shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]" style={{ background: theme.tile, color: theme.fg, borderColor: theme.ring }}>
+            <Icon name={theme.icon} className="h-6 w-6" />
+          </span>
+          <span className="flex flex-col items-end gap-1">
+            <span className={`rounded-full border px-2.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] ${/ready/i.test(item.tag) ? ORANGE.chip : NEUTRAL.chip}`}>{item.tag}</span>
+            {item.meta && <span className="text-[11.5px] font-medium text-slate-500">{item.meta}</span>}
+          </span>
+        </div>
+        <h3 className="mt-4 text-[15px] font-semibold leading-snug text-ink">{item.title}</h3>
+        <p className="mt-1.5 line-clamp-2 text-[13px] leading-5 text-slate-500">{item.body}</p>
+        <div className="mt-auto flex items-center justify-between gap-3 pt-5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {item.apps.map(([icon, label]) => (
+              <span key={label} title={label} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${theme.chip}`}>
+                <Icon name={icon} className="h-3.5 w-3.5" />{label}
+              </span>
+            ))}
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-[13px] font-semibold transition-colors duration-200" style={{ color: ORANGE.ink, background: ORANGE.wash }}>
+            {cta}<Icon name="arrow" className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-1" />
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 export function ShowcaseCard({ item }) {
+  const theme = TEMPLATE_THEMES[item.key] || (item.apps?.length ? { icon: item.apps[0][0], ...accentFor(item.key) } : null);
+  if (theme && item.apps) return <ThemedTemplateCard item={item} theme={theme} />;
   return (
     <Link to={item.to || '/workflows/new'} className={`${card} ${lift} group flex h-full flex-col p-5`} aria-label={`${item.cta || 'Try it'}: ${item.title}`}>
       <span className="flex items-center gap-2">
@@ -162,7 +256,7 @@ function Allocation({ label, used, total, hint }) {
         <p className="text-[13px] tabular-nums text-slate-500"><span className="font-semibold text-ink">{used}</span> of {total}<span className="ml-2 inline-block w-10 text-right text-slate-400">{Math.round(ratio * 100)}%</span></p>
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={total} aria-valuenow={used}>
-        <div className="h-full rounded-full bg-teal transition-[width] duration-500" style={{ width: `${ratio * 100}%` }} />
+        <div className="h-full rounded-full bg-[#FA4616] transition-[width] duration-500" style={{ width: `${ratio * 100}%` }} />
       </div>
       {hint && <p className="mt-2 text-xs text-slate-500">{hint}</p>}
     </div>
@@ -170,9 +264,14 @@ function Allocation({ label, used, total, hint }) {
 }
 
 function EmptyState({ icon, children, action }) {
+  const accent = NEUTRAL;
   return (
     <div className="flex flex-col items-center px-6 py-10 text-center">
-      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#F6F4F1] text-slate-400"><Icon name={icon} className="h-5 w-5" /></span>
+      <span className="relative grid h-20 w-20 place-items-center" aria-hidden="true">
+        <span className="absolute inset-0 rounded-full" style={{ background: `radial-gradient(circle, ${accent.wash} 0%, rgba(255,255,255,0) 70%)` }} />
+        <span className="absolute inset-3 rounded-full border border-dashed" style={{ borderColor: accent.ring }} />
+        <span className="relative"><AccentTile accent={accent} icon={icon} /></span>
+      </span>
       <p className="mt-3 text-[13px] text-slate-500">{children}</p>
       {action}
     </div>
@@ -188,9 +287,10 @@ function Skeleton({ rows = 3 }) {
 }
 
 function Stat({ label, value, sub }) {
+  const dot = STATUS_DOT[label] || NEUTRAL.dot;
   return (
-    <div className="rounded-lg bg-[#FAF9F7] px-3.5 py-3 ring-1 ring-inset ring-[#F1EEEA]">
-      <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-slate-500">{label}</p>
+    <div className="relative overflow-hidden rounded-xl border border-[#EEE9E3] bg-[#FBFAF8] px-3.5 py-3">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500"><span className="h-1.5 w-1.5 rounded-full" style={{ background: dot }} aria-hidden="true" />{label}</p>
       <p className="mt-1 text-[24px] font-medium tabular-nums leading-none tracking-tight text-ink">{value}</p>
       {sub && <p className="mt-1 text-[11px] text-slate-500">{sub}</p>}
     </div>
@@ -274,14 +374,10 @@ export default function HomePage() {
   const flowsByProject = (id) => (data.workflows || []).filter((workflow) => workflow.project_id === id);
   const lastActivity = [data.jobs?.[0]?.createdAt, data.workflows?.[0]?.updated_at].filter(Boolean).sort().pop();
 
-  async function run(workflow) {
+  const [runWorkflow, runDialog] = useRunWorkflow({ onError: (error) => setMessage(error.message) });
+  function run(workflow) {
     setMessage('');
-    try {
-      const result = await api(`/api/workflows/${workflow.id}/run`, { method: 'POST', body: { input: {} } });
-      navigate(`/jobs/${result.data.id}`);
-    } catch (error) {
-      setMessage(`${workflow.name}: ${error.message}`);
-    }
+    runWorkflow(workflow);
   }
 
   const robots = data.robots || [];
@@ -294,24 +390,28 @@ export default function HomePage() {
   return (
     <div className="xl:grid xl:min-h-[calc(100vh-3.5rem)] xl:grid-cols-[minmax(0,1fr)_360px]">
       <main id="app-main" className="min-w-0">
+        {runDialog}
         <div className="mx-auto max-w-[1280px] px-5 pb-16 pt-8 sm:px-8 lg:px-10">
-          <header>
-            <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.025em] text-ink sm:text-[30px]">{greeting()}, {user?.displayName || 'there'}</h1>
-            <p className="mt-1.5 text-sm text-slate-500">
-              {today}
-              {data.tenant?.name && <><span className="mx-2 text-slate-300">·</span>{data.tenant.name}</>}
-              {role && <><span className="mx-2 text-slate-300">·</span><span className="capitalize">{role}</span></>}
+          <header className="flex flex-col gap-3 rounded-2xl border border-[#EEE9E3] bg-white px-5 py-3.5 shadow-[0_1px_2px_rgba(20,33,61,0.04)] sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <AccentTile accent={ORANGE} size="sm">{(user?.displayName || 'U')[0].toUpperCase()}</AccentTile>
+              <h1 className="truncate text-[20px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[22px]">{greeting()}, {user?.displayName || 'there'}</h1>
+            </div>
+            <p className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#ECE6DF] bg-[#F7F5F2] px-2.5 py-0.5 text-[12px] font-medium text-[#5B6474]"><Icon name="calendar" className="h-3.5 w-3.5 text-slate-400" />{today}</span>
+              {data.tenant?.name && <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#ECE6DF] bg-[#F7F5F2] px-2.5 py-0.5 text-[12px] font-medium text-[#5B6474]"><Icon name="briefcase" className="h-3.5 w-3.5 text-slate-400" />{data.tenant.name}</span>}
+              {role && <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#ECE6DF] bg-[#F7F5F2] px-2.5 py-0.5 text-[12px] font-medium text-[#5B6474] capitalize"><Icon name="shield" className="h-3.5 w-3.5 text-slate-400" />{role}</span>}
             </p>
           </header>
 
           <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {PRODUCTS.map((product) => (
-              <Link key={product.title} to={product.to} className={`${card} ${lift} group flex h-full flex-col p-5`}>
-                <div className="flex items-start justify-between">
-                  <span className={`u-tile grid h-10 w-10 place-items-center rounded-[10px] ${product.tile}`}><Icon name={product.icon} className="h-5 w-5" strokeWidth={1.8} /></span>
-                  <Icon name="arrowUpRight" className="h-4 w-4 text-slate-300 transition-colors group-hover:text-ember" />
+              <Link key={product.title} to={product.to} className={`${card} ${lift} group relative flex h-full flex-col overflow-hidden p-5`}>
+                <div className="relative flex items-start justify-between">
+                  <AccentTile accent={product.accent === 'orange' ? ORANGE : NEUTRAL} icon={product.icon} size="lg" />
+                  <span className="grid h-7 w-7 place-items-center rounded-full text-slate-400 transition-[transform,color] duration-200 group-hover:text-[#E03A0E] group-hover:translate-x-0.5 group-hover:-translate-y-0.5" style={{ background: NEUTRAL.wash }}><Icon name="arrowUpRight" className="h-4 w-4" /></span>
                 </div>
-                <h3 className="mt-4 text-[15px] font-semibold text-ink">{product.title}</h3>
+                <h3 className="relative mt-4 text-[15px] font-semibold text-ink">{product.title}</h3>
                 <p className="mt-1 text-[13px] leading-5 text-slate-500">{product.body}</p>
               </Link>
             ))}
@@ -322,7 +422,7 @@ export default function HomePage() {
               <div className={`${card} p-5`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-[#3A474E] to-[#172125] text-sm font-semibold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">{(data.tenant?.name || 'T')[0].toUpperCase()}</span>
+                    <AccentTile accent={NEUTRAL}>{(data.tenant?.name || 'T')[0].toUpperCase()}</AccentTile>
                     <div className="min-w-0">
                       <p className="truncate text-[15px] font-semibold text-ink">{data.tenant?.name || (data.loading ? 'Loading…' : 'Default tenant')}</p>
                       <p className="text-xs text-slate-500">Tenant{data.tenant?.slug ? ` · ${data.tenant.slug}` : ''}{lastActivity ? ` · Updated ${timeAgo(lastActivity)}` : ''}</p>
@@ -345,7 +445,7 @@ export default function HomePage() {
               <div className={`${card} flex flex-col p-5`}>
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-[15px] font-semibold text-ink">Execution summary</p>
+                    <p className="flex items-center gap-2 text-[15px] font-semibold text-ink"><AccentTile accent={NEUTRAL} icon="gauge" size="sm" />Execution summary</p>
                     <p className="text-xs text-slate-500">Jobs across the projects you can access</p>
                   </div>
                   <SeeAll to="/metrics">Metrics</SeeAll>
@@ -450,9 +550,9 @@ export default function HomePage() {
                       const flows = flowsByProject(project.id);
                       const first = flows.find((flow) => flow.status === 'published') || flows[0];
                       return (
-                        <article key={project.id} className={`relative flex h-full flex-col rounded-lg border border-[#ECE8E3] bg-white p-4 transition duration-150 hover:border-[#E2DCD5] hover:shadow-[0_8px_20px_-12px_rgba(16,24,40,0.14)]`}>
+                        <article key={project.id} className={`relative flex h-full flex-col rounded-xl border border-[#ECE8E3] bg-white p-4 transition-[transform,box-shadow,border-color] duration-300 ease-out hover:-translate-y-0.5 hover:border-[#E3DDD6] hover:shadow-[0_16px_32px_-20px_rgba(20,33,61,0.28)] motion-reduce:hover:translate-y-0`}>
                           <div className="flex items-center gap-3">
-                            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#F6F4F1] text-sm font-semibold text-charcoal">{project.name?.[0]?.toUpperCase()}</span>
+                            <AccentTile accent={accentFor(project.id ?? project.name)}>{project.name?.[0]?.toUpperCase()}</AccentTile>
                             <div className="min-w-0">
                               <Link to="/projects" className="block truncate text-[14px] font-semibold text-ink hover:text-ember">{project.name}</Link>
                               <p className="truncate text-xs text-slate-500">Updated {timeAgo(project.updated_at || project.created_at)}</p>
@@ -488,8 +588,8 @@ export default function HomePage() {
                 data.workflows?.length ? (
                   <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
                     {data.workflows.slice(0, 8).map((workflow) => (
-                      <article key={workflow.id} className="flex h-full flex-col rounded-lg border border-[#ECE8E3] bg-white p-4 transition duration-150 hover:border-[#E2DCD5] hover:shadow-[0_8px_20px_-12px_rgba(16,24,40,0.14)]">
-                        <div><StatusPill status={workflow.status} /></div>
+                      <article key={workflow.id} className="flex h-full flex-col rounded-xl border border-[#ECE8E3] bg-white p-4 transition-[transform,box-shadow,border-color] duration-300 ease-out hover:-translate-y-0.5 hover:border-[#E3DDD6] hover:shadow-[0_16px_32px_-20px_rgba(20,33,61,0.28)] motion-reduce:hover:translate-y-0">
+                        <div className="flex items-center justify-between"><AccentTile accent={accentFor(workflow.id ?? workflow.name)} icon="flow" size="sm" /><StatusPill status={workflow.status} /></div>
                         <Link to={`/workflows/${workflow.id}`} className="mt-3 truncate text-[14px] font-semibold text-ink hover:text-ember">{workflow.name}</Link>
                         <p className="text-xs text-slate-500">{workflow.status === 'published' ? 'Published' : 'Updated'} {timeAgo(workflow.updated_at)}</p>
                         <div className="mt-auto flex justify-end pt-4">
@@ -578,29 +678,39 @@ export default function HomePage() {
           </div>
 
           <div id="whats-new" className="scroll-mt-20">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">What's New</h2>
-            <ul className="mt-3 divide-y divide-[#F1EEEA]">
-              {WHATS_NEW.map((item) => (
-                <li key={item.title} className="py-3.5 first:pt-1">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-[#FFF1EC] px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-ember">New</span>
-                    <p className="text-[13.5px] font-semibold text-ink">{item.title}</p>
-                    <span className="ml-auto text-[11px] text-slate-400">{item.date}</span>
-                  </div>
-                  <p className="mt-1 text-[13px] leading-5 text-slate-500">{item.body}</p>
-                  <Link to={item.to} className="group mt-1 inline-flex items-center gap-1 text-[13px] font-medium text-ink hover:text-ember">{item.link}<Icon name="arrow" className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></Link>
-                </li>
-              ))}
+            <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-ink"><AccentTile accent={NEUTRAL} icon="sparkle" size="sm" />What's New</h2>
+            <p className="mt-1 text-[12.5px] text-slate-500">Features shipped this month</p>
+            <ul className="mt-4 space-y-3">
+              {WHATS_NEW.map((item) => {
+                const [icon] = WHATS_NEW_STYLE[item.title] || ['sparkle'];
+                const accent = NEUTRAL;
+                return (
+                  <li key={item.title} className={`${card} ${lift} group relative overflow-hidden p-4`}>
+                    <div className="flex items-start gap-3">
+                      <AccentTile accent={accent} icon={icon} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`rounded-full border px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide ${ORANGE.chip}`}>New</span>
+                          <span className="ml-auto text-[11px] text-slate-400">{item.date}</span>
+                        </div>
+                        <p className="mt-1 text-[13.5px] font-semibold text-ink">{item.title}</p>
+                        <p className="mt-1 text-[12.5px] leading-5 text-slate-500">{item.body}</p>
+                        <Link to={item.to} className="mt-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink transition-colors group-hover:text-[#E03A0E]">{item.link}<Icon name="arrow" className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" /></Link>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
 
           <div>
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Resources</h2>
+            <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-ink"><AccentTile accent={NEUTRAL} icon="library" size="sm" />Resources</h2>
             <ul className="mt-2 space-y-0.5">
               {RESOURCES.map(([to, label, icon]) => (
                 <li key={to}>
                   <Link to={to} className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-2 text-[13.5px] text-charcoal transition-colors hover:bg-[#F6F4F1] hover:text-ink">
-                    <span className="grid h-7 w-7 place-items-center rounded-md border border-[#ECE8E3] bg-white text-slate-500 group-hover:text-ember"><Icon name={icon} className="h-4 w-4" /></span>
+                    <span className="grid h-8 w-8 place-items-center rounded-lg border transition-transform duration-200 group-hover:scale-105" style={{ background: accentFor(label).wash, color: accentFor(label).ink, borderColor: accentFor(label).ring }}><Icon name={icon} className="h-4 w-4" /></span>
                     {label}
                     <Icon name="chevronRight" className="ml-auto h-4 w-4 text-slate-300 group-hover:text-slate-500" />
                   </Link>

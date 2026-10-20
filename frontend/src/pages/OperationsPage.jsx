@@ -22,7 +22,7 @@ const SECRET_HINTS = {
   postgres: '{ "password": "…" }',
   email: '{ "user": "…", "password": "…" }',
   google_sheets: 'Paste the service account key JSON (client_email, private_key, token_uri)',
-  credential: '{ "username": "ana", "password": "…" }',
+  credential: '{ "username": "…", "password": "…" }',
 };
 
 function Json({ value }) {

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import { missingInput } from '../workflow/inputRefs.js';
 import path from 'node:path';
 import express from 'express';
 import helmet from 'helmet';
@@ -846,6 +847,8 @@ export function createApp(options = {}) {
     const project = await loadProject(req.user, workflow.project_id);
     const [versions] = await pool.query(`SELECT * FROM workflow_versions WHERE id = ?`, [workflow.current_version_id]);
     if (!versions[0]) throw new AppError(409, 'VERSION_NOT_PUBLISHED', 'Workflow has no published version');
+    const missing = missingInput(versions[0].definition_json, req.body?.input || {});
+    if (missing.length) throw new AppError(400, 'INPUT_REQUIRED', `Enter a value for ${missing.join(', ')} before running.`);
     const job = await enqueueJob(pool, cfg, {
       project, workflow, version: versions[0], user: req.user,
       input: req.body?.input || {}, triggerSource: req.body?.testRun ? 'test' : 'manual',

@@ -8,6 +8,7 @@ import RecorderModal from '../components/RecorderModal.jsx';
 import { ActivityIcon, CodeField, DropIllustration, Glyph } from '../components/DesignerChrome.jsx';
 import { Icon } from '../components/brand.jsx';
 import { templateByKey } from '../lib/workflowTemplates.js';
+import { useRunWorkflow } from '../components/RunInputDialog.jsx';
 
 const START_STEPS = [
   { id: 'start', type: 'start', name: 'Start', config: { designer: { x: 48, y: 36 } }, errorPolicy: 'fail', next: 'end' },
@@ -19,6 +20,8 @@ const canRun = (role) => role !== 'viewer';
 
 function WorkflowLibrary() {
   const navigate = useNavigate();
+  const [runWorkflow, runDialog] = useRunWorkflow({ onError: (err) => setError(err.message) });
+  const listRun = (row) => { setError(''); runWorkflow(row); };
   const user = currentUser();
   const [rows, setRows] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -57,6 +60,7 @@ function WorkflowLibrary() {
 
   return (
     <section className="space-y-4">
+      {runDialog}
       <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Workflow library</h1>{canWrite(user?.role) && <Link className={buttonClass} to="/workflows/new">New workflow</Link>}</div>
       <form className="grid gap-2 md:grid-cols-4" onSubmit={(event) => { event.preventDefault(); load().catch((err) => setError(err.message)); }}>
         <input className={inputClass} placeholder="Search name" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} />
@@ -77,7 +81,7 @@ function WorkflowLibrary() {
                 <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
                 <td className="px-3 py-2">{row.updated_at}</td>
                 <td className="px-3 py-2"><div className="flex flex-wrap justify-end gap-1">
-                  {row.status === 'published' && canRun(user?.role) && <button className={quietClass} type="button" onClick={() => act('Job queued', async () => { const job = await api(`/api/workflows/${row.id}/run`, { method: 'POST', body: { input: {} } }); navigate(`/jobs/${job.data.id}`); })}>Run</button>}
+                  {row.status === 'published' && canRun(user?.role) && <button className={quietClass} type="button" onClick={() => listRun(row)}>Run</button>}
                   {canWrite(user?.role) && <button className={quietClass} type="button" onClick={() => act('Cloned as a new draft', () => api(`/api/workflows/${row.id}/clone`, { method: 'POST' }))}>Clone</button>}
                   {canWrite(user?.role) && row.status === 'published' && <button className={quietClass} type="button" onClick={() => act('Disabled', () => api(`/api/workflows/${row.id}/disable`, { method: 'POST' }))}>Disable</button>}
                   {canWrite(user?.role) && row.status === 'disabled' && <button className={quietClass} type="button" onClick={() => act('Enabled', () => api(`/api/workflows/${row.id}/enable`, { method: 'POST' }))}>Enable</button>}
@@ -97,6 +101,7 @@ function WorkflowDesigner() {
   const user = currentUser();
   const [projects, setProjects] = useState([]);
   const [error, setError] = useState('');
+  const [runWorkflow, runDialog] = useRunWorkflow({ onError: (err) => setError(err.message) });
   const [message, setMessage] = useState('');
   const [workflowId, setWorkflowId] = useState(params.id || '');
   const [workflow, setWorkflow] = useState(null);
@@ -111,7 +116,7 @@ function WorkflowDesigner() {
   const [steps, setSteps] = useState(() => (template ? structuredClone(template.steps) : START_STEPS));
   const [selected, setSelected] = useState(0);
   const [loadKey, setLoadKey] = useState(0);
-  const [input, setInput] = useState(template ? JSON.stringify(template.input || {}, null, 2) : '{\n  "rows": []\n}');
+  const [input, setInput] = useState('{}');
   const [validation, setValidation] = useState([]);
   const [connections, setConnections] = useState([]);
   const [picks, setPicks] = useState([]);
@@ -451,7 +456,7 @@ function WorkflowDesigner() {
           {writable && <button className={toolBtn} type="button" onClick={() => guarded(async () => { await save(); setSavedTick((n) => n + 1); })}><Glyph name="save" className="h-3.5 w-3.5" />Save</button>}
           <button className={toolBtn} type="button" onClick={() => guarded(async () => { const id = await ensureWorkflow(); const result = await api(`/api/workflows/${id}/validate`, { method: 'POST', body: { definition } }); showValidation(result.data); setMessage(result.data.valid ? 'Valid' : ''); })}><Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.2} />Validate</button>
           {writable && <button className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#F2B79F] bg-white px-3 text-[13px] font-semibold text-[#D63A0C] transition-colors hover:border-[#E9521F] hover:bg-[#FFF6F2] disabled:opacity-50" type="button" onClick={() => guarded(async () => { const saved = await save(); if (!saved.valid) return; await api(`/api/workflows/${saved.id}/publish`, { method: 'POST' }); await loadWorkflow(saved.id); setSavedTick((n) => n + 1); setMessage('Published'); })}><Icon name="upload" className="h-3.5 w-3.5" />Publish</button>}
-          {canRun(user?.role) && <button className="u-btn-primary inline-flex h-8 items-center gap-1.5 rounded-lg px-3.5 text-[13px] font-semibold disabled:cursor-not-allowed disabled:opacity-55" type="button" disabled={!published} title={published ? 'Queue a test run' : 'Publish a version first'} onClick={() => guarded(async () => { const job = await api(`/api/workflows/${workflowId}/run`, { method: 'POST', body: { testRun: true, input: JSON.parse(input) } }); navigate(`/jobs/${job.data.id}`); })}><Icon name="play" className="h-3.5 w-3.5" />Run</button>}
+          {canRun(user?.role) && <button className="u-btn-primary inline-flex h-8 items-center gap-1.5 rounded-lg px-3.5 text-[13px] font-semibold disabled:cursor-not-allowed disabled:opacity-55" type="button" disabled={!published} title={published ? 'Queue a test run' : 'Publish a version first'} onClick={() => guarded(async () => { const typed = JSON.parse(input || '{}'); await runWorkflow({ id: workflowId, name: form.name }, { testRun: true, templateKey: template?.key, initial: Object.fromEntries(Object.entries(typed).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)])) }); })}><Icon name="play" className="h-3.5 w-3.5" />Run</button>}
         </div>
       </div>
       {error && <p className="shrink-0 border-b border-[#F4C7C1] bg-[#FEF3F2] px-4 py-1.5 text-[13px] text-[#B42318]" role="alert">{error}</p>}
@@ -682,6 +687,7 @@ function WorkflowDesigner() {
         </aside>
       </div>
       {recorderOpen && <RecorderModal initialTab={!params.id && query.get('import') === 'codegen' ? 'codegen' : 'record'} onInsert={insertRecorded} onPicks={setPicks} onClose={() => setRecorderOpen(false)} />}
+      {runDialog}
     </section>
   );
 }

@@ -75,3 +75,26 @@ body:has(.landing) {
 @media (prefers-reduced-motion: reduce) {
   .hero-cube { animation: none; }
 }
+
+/* Path section ("See the path in action"). Motion uses transform/opacity (plus the SVG dash
+   offset for connector pulses), eased with expo-out curves. */
+@keyframes landing-path-pulse { from { stroke-dashoffset: 116; } to { stroke-dashoffset: -16; } }
+@keyframes landing-path-trail { from { stroke-dashoffset: 140; } to { stroke-dashoffset: -16; } }
+@keyframes landing-path-in { from { opacity: 0; transform: translate3d(0, 12px, 0); } to { opacity: 1; transform: none; } }
+@keyframes landing-path-row { from { opacity: 0; transform: translate3d(-8px, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes landing-path-halo { 0%, 100% { opacity: 0.55; transform: scale(0.96); } 50% { opacity: 1; transform: scale(1.04); } }
+@keyframes landing-path-shimmer { 0%, 55% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(400%, 0, 0); } }
+@keyframes landing-path-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.landing-path-pulse { stroke-dasharray: 16 100; animation: landing-path-pulse 1.5s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+.landing-path-trail { stroke-dasharray: 40 100; opacity: 0.22; animation: landing-path-trail 1.5s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+.landing-path-copy { animation: landing-path-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.landing-path-row { animation: landing-path-row 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.landing-path-halo { animation: landing-path-halo 3.2s ease-in-out infinite; will-change: transform, opacity; }
+.landing-path-shimmer { animation: landing-path-shimmer 3.6s cubic-bezier(0.45, 0, 0.25, 1) infinite; will-change: transform; }
+.landing-path-progress { transform: scaleX(0); animation: landing-path-progress 1.5s linear forwards; will-change: transform; }
+@media (prefers-reduced-motion: reduce) {
+  .landing-path-pulse { animation: none; stroke-dasharray: none; opacity: 0.85; }
+  .landing-path-trail, .landing-path-shimmer { animation: none; display: none; }
+  .landing-path-progress { animation: none; transform: scaleX(1); }
+  .landing-path-copy, .landing-path-row, .landing-path-halo { animation: none; }
+}

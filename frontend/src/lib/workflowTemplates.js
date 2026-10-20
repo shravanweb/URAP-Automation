@@ -75,7 +75,13 @@ export const WORKFLOW_TEMPLATES = [
     title: 'Route a purchase request for approval',
     body: 'Create an Action Center approval task with the request details, pause the job until a manager approves or rejects, then post an in-app notification with the outcome.',
     apps: [['tasks', 'Action Center'], ['bell', 'Notifications']],
-    input: { item: 'Laptop', amount: 1200, requestedBy: 'alex@example.com' },
+    // No sample values: Run asks for these (components/RunInputDialog.jsx).
+    input: {},
+    inputFields: [
+      { name: 'item', label: 'Item', placeholder: 'Item name', required: true },
+      { name: 'amount', label: 'Amount', type: 'number', placeholder: 'Requested amount', required: true },
+      { name: 'requestedBy', label: 'Requested by', type: 'email', placeholder: 'Requester email', required: true },
+    ],
     retryPolicy: { maxAttempts: 1, backoffSeconds: 0 },
     steps: [
       step('start', 'start', 'Start', {}, 'approval', row(0)),
@@ -138,7 +144,8 @@ export const WORKFLOW_TEMPLATES = [
     title: 'Type a note into Notepad',
     body: 'Windows only: open Notepad on a Windows worker or robot machine, type the note from the job input, and log how many characters were typed.',
     apps: [['monitor', 'Windows desktop']],
-    input: { note: 'Hello from URAP' },
+    input: {},
+    inputFields: [{ name: 'note', label: 'Note', type: 'textarea', placeholder: 'Text to type into Notepad', required: true }],
     retryPolicy: { maxAttempts: 1, backoffSeconds: 0 },
     steps: [
       step('start', 'start', 'Start', {}, 'open', row(0)),
