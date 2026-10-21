@@ -389,7 +389,7 @@ const pillars = [
       ['Review', 'Stage 03', 74, 52],
       ['Save', 'Stage 04', 48, 84],
     ],
-    edges: [[0, 1], [1, 3], [0, 2], [2, 4], [3, 4]],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4]],
     tags: { 1: 'Checked', 4: 'Saved' },
   },
   {
@@ -410,7 +410,7 @@ const pillars = [
       ['Return output', 'Result', 74, 50],
       ['Attempt log', 'History', 48, 84],
     ],
-    edges: [[0, 1], [1, 3], [0, 2], [2, 4], [3, 4]],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4]],
     tags: { 0: 'Queued', 3: 'Returned' },
   },
   {
@@ -431,30 +431,44 @@ const pillars = [
       ['Queue', 'Work items', 74, 50],
       ['Audit', 'Record', 48, 84],
     ],
-    edges: [[0, 1], [1, 3], [0, 2], [2, 4], [3, 4]],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4]],
     tags: { 1: 'Running', 4: 'Logged' },
   },
 ];
 
-// Clips the centre-to-centre segment so it starts and ends on the node boxes' borders (+gap).
-function edgeBetween(a, b, gap = 6) {
-  const ca = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
-  const cb = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
-  const dx = cb.x - ca.x; const dy = cb.y - ca.y;
-  const exit = (box) => {
-    const tx = dx ? (box.w / 2 + gap) / Math.abs(dx) : Infinity;
-    const ty = dy ? (box.h / 2 + gap) / Math.abs(dy) : Infinity;
-    return Math.min(tx, ty);
-  };
-  const ta = exit(a); const tb = exit(b);
-  return { x1: ca.x + dx * ta, y1: ca.y + dy * ta, x2: cb.x - dx * tb, y2: cb.y - dy * tb };
+// UiPath-style orthogonal connector between two node boxes ({x, y, w, h} in board pixels).
+// Same row: right edge -> left edge. Next row: down from the bottom edge, across, down into the
+// top edge, with rounded corners. The path ends `gap` px short of the border for the arrowhead.
+export function elbowPath(a, b, { gap = 7, radius = 10 } = {}) {
+  const acx = a.x + a.w / 2; const bcx = b.x + b.w / 2;
+  if (Math.abs((a.y + a.h / 2) - (b.y + b.h / 2)) < Math.min(a.h, b.h) / 2) {
+    const y = (Math.max(a.y, b.y) + Math.min(a.y + a.h, b.y + b.h)) / 2;
+    const forward = bcx >= acx;
+    const x1 = forward ? a.x + a.w : a.x; const x2 = forward ? b.x - gap : b.x + b.w + gap;
+    return `M${x1} ${y} H${x2}`;
+  }
+  const down = b.y > a.y;
+  const y1 = down ? a.y + a.h : a.y; const y2 = down ? b.y - gap : b.y + b.h + gap;
+  const mid = (y1 + (down ? b.y : b.y + b.h)) / 2;
+  const dx = bcx - acx;
+  if (Math.abs(dx) < 1) return `M${acx} ${y1} V${y2}`;
+  const r = Math.min(radius, Math.abs(dx) / 2, Math.abs(mid - y1), Math.abs(y2 - mid));
+  const sx = Math.sign(dx); const sy = down ? 1 : -1;
+  return `M${acx} ${y1} V${mid - sy * r} Q${acx} ${mid} ${acx + sx * r} ${mid} H${bcx - sx * r} Q${bcx} ${mid} ${bcx} ${mid + sy * r} V${y2}`;
 }
 
-function FlowBoard({ pillar, active }) {
-  const lit = new Set([active, active === pillar.points.length - 1 ? pillar.nodes.length - 1 : active]);
+/** Share of edge `index` drawn at board progress p (0..1); edges finish by 92% of the scroll. */
+export function edgeProgress(p, index, count) {
+  const span = 0.92 / Math.max(count, 1);
+  return Math.min(Math.max((p - index * span) / span, 0), 1);
+}
+
+function FlowBoard({ pillar, sectionRef }) {
   const board = useRef(null);
   const boxes = useRef([]);
+  const lines = useRef([]);
   const [rects, setRects] = useState([]);
+  const [reached, setReached] = useState(0); // number of edges fully drawn
   useEffect(() => {
     const measure = () => {
       const root = board.current?.getBoundingClientRect();
@@ -471,29 +485,59 @@ function FlowBoard({ pillar, active }) {
     window.addEventListener('resize', measure);
     return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
   }, [pillar]);
+  // Scroll-linked drawing: writes stroke-dashoffset straight to the DOM in rAF (no re-render per
+  // frame); React state only changes when another edge completes, to light the next node.
+  useEffect(() => {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    let frame = 0;
+    const count = pillar.edges.length;
+    const render = () => {
+      frame = 0;
+      const el = sectionRef?.current;
+      let p = 1;
+      if (el && !reduced) {
+        const total = Math.max(el.offsetHeight - window.innerHeight, 1);
+        p = Math.min(Math.max(-el.getBoundingClientRect().top, 0), total) / total;
+      }
+      let done = 0;
+      lines.current.forEach((line, i) => {
+        const t = edgeProgress(p, i, count);
+        if (t >= 0.999) done += 1;
+        if (line) line.style.strokeDashoffset = String(1 - t);
+      });
+      setReached((prev) => (prev === done ? prev : done));
+    };
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(render); };
+    render();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); };
+  }, [pillar, sectionRef, rects]);
+  const lit = (index) => index <= reached;
   const markerId = `flow-arrow-${pillar.number}`;
   return (
     <div ref={board} className="relative h-[520px] overflow-hidden bg-[#10181e]" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.16) 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
-      <svg className="absolute inset-0 h-full w-full" aria-hidden="true">
+      <svg className="absolute inset-0 h-full w-full" fill="none" aria-hidden="true">
         <defs>
-          {['on', 'off'].map((tone) => (
-            <marker key={tone} id={`${markerId}-${tone}`} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
-              <path d="M1 1.2 L9 5 L1 8.8 L3 5 Z" fill={tone === 'on' ? '#2ee0ef' : '#2a7580'} />
-            </marker>
-          ))}
+          <marker id={markerId} viewBox="0 0 10 10" refX="1" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto" overflow="visible">
+            <path d="M1 1.2 L9 5 L1 8.8 L3 5 Z" fill="#2ee0ef" />
+          </marker>
         </defs>
-        {pillar.edges.map(([from, to]) => {
-          const on = lit.has(from) || lit.has(to);
-          const stroke = on ? '#2ee0ef' : '#1d4e57';
-          if (rects[from] && rects[to]) {
-            const e = edgeBetween(rects[from], rects[to]);
-            return <line key={`${from}-${to}`} {...e} stroke={stroke} strokeWidth="2" strokeLinecap="round" markerEnd={`url(#${markerId}-${on ? 'on' : 'off'})`} style={on ? { filter: 'drop-shadow(0 0 3px rgba(46,224,239,0.45))' } : undefined} />;
-          }
-          return <line key={`${from}-${to}`} x1={`${pillar.nodes[from][2]}%`} y1={`${pillar.nodes[from][3]}%`} x2={`${pillar.nodes[to][2]}%`} y2={`${pillar.nodes[to][3]}%`} stroke={stroke} strokeWidth="2" />;
+        {pillar.edges.map(([from, to], i) => {
+          if (!rects[from] || !rects[to]) return null;
+          const d = elbowPath(rects[from], rects[to]);
+          const arrived = i < reached;
+          return (
+            <g key={`${from}-${to}`}>
+              <path d={d} stroke="#1d4e57" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path ref={(el) => { lines.current[i] = el; }} d={d} pathLength="1" strokeDasharray="1 1" strokeDashoffset="1" stroke="#2ee0ef" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                markerEnd={arrived ? `url(#${markerId})` : undefined} style={{ filter: 'drop-shadow(0 0 3px rgba(46,224,239,0.45))' }} />
+            </g>
+          );
         })}
       </svg>
       {pillar.nodes.map(([title, stage, x, y], index) => {
-        const on = lit.has(index);
+        const on = lit(index);
         return (
           <div key={title} className="absolute w-[168px] -translate-x-1/2 -translate-y-1/2" style={{ left: `${x}%`, top: `${y}%` }}>
             {pillar.tags[index] && <span className={`mb-1 inline-block px-2 py-0.5 text-[10px] font-semibold ${on ? 'bg-[#2ee0ef] text-[#082126]' : 'bg-[#16343a] text-[#8fdbe3]'}`}>{pillar.tags[index]}</span>}
@@ -911,7 +955,7 @@ export default function LandingPage() {
                   ))}
                 </ul>
               </div>
-              <FlowBoard pillar={pillar} active={pillarSteps[index]} />
+              <FlowBoard pillar={pillar} sectionRef={pillarRefs[index]} />
             </div>
           </div>
         ))}
