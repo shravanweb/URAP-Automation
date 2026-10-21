@@ -31,6 +31,7 @@ const WorkflowsPage = lazy(() => import('./pages/WorkflowsPage.jsx'));
 const OperationsPage = lazy(() => import('./pages/OperationsPage.jsx'));
 const QueuesPage = lazy(() => import('./pages/QueuesPage.jsx'));
 const ActionCenterPage = lazy(() => import('./pages/ActionCenterPage.jsx'));
+const PlatformPage = lazy(() => import('./pages/PlatformPage.jsx'));
 
 function RequireAuth() {
   const location = useLocation();
@@ -88,6 +89,11 @@ export default function App() {
           <Route path="/reports" element={<OperationsPage section="reports" />} />
           <Route path="/audit" element={<OperationsPage section="audit" />} />
           <Route path="/settings" element={<OperationsPage section="settings" />} />
+          <Route path="/platform" element={<PlatformPage section="overview" />} />
+          <Route path="/platform/workspaces" element={<PlatformPage section="workspaces" />} />
+          <Route path="/platform/workspaces/:id" element={<PlatformPage section="workspace" />} />
+          <Route path="/platform/users" element={<PlatformPage section="users" />} />
+          <Route path="/platform/audit" element={<PlatformPage section="audit" />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

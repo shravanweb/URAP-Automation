@@ -78,8 +78,10 @@ export function loadConfig(overrides = {}) {
     jsonBodyLimit: process.env.JSON_BODY_LIMIT || '1mb',
     // Set to e.g. 1 or 'loopback' only when running behind a reverse proxy, so rate limits see client IPs.
     trustProxy: process.env.TRUST_PROXY || '',
-    // Self-service sign-up from the public site. New accounts join the default tenant with
-    // SIGNUP_ROLE (never administrator) and get a starter project named after their organization.
+    // Self-service sign-up from the public site. Each new account gets its own workspace (tenant),
+    // is the administrator of that workspace only, and gets a starter project named after its
+    // organization. SIGNUP_ROLE is kept for compatibility and validated (administrator is refused at
+    // start-up) but no longer decides the role: nobody signs up into the Default tenant.
     allowSignup: process.env.ALLOW_SIGNUP !== 'false',
     signupRole: signupRole(process.env.SIGNUP_ROLE),
     signupRateLimitMax: Number(process.env.SIGNUP_RATE_LIMIT_MAX || 10),

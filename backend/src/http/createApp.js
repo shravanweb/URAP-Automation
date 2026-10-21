@@ -38,6 +38,7 @@ import { registerCaseRoutes } from './caseRoutes.js';
 import { registerBpmnRoutes } from './bpmnRoutes.js';
 import { registerAuditRoutes } from './auditRoutes.js';
 import { registerInsightsRoutes } from './insightsRoutes.js';
+import { registerPlatformRoutes } from './platformRoutes.js';
 import { requestContextMiddleware } from '../lib/requestContext.js';
 import { kickAgentRun } from '../agent/runtime.js';
 import { PROVIDERS } from '../agent/providers.js';
@@ -101,7 +102,13 @@ function presentUser(user) {
     role: user.role,
     status: user.status,
     tenantId: user.tenant_id,
+    isSuperAdmin: Boolean(user.is_super_admin),
   };
+}
+
+const SUSPENDED_MESSAGE = 'Workspace suspended. Contact the platform administrator to restore access.';
+function suspendedError() {
+  return new AppError(403, 'WORKSPACE_SUSPENDED', SUSPENDED_MESSAGE);
 }
 
 function presentJob(job) {
@@ -217,8 +224,12 @@ export function createApp(options = {}) {
       const token = header.startsWith('Bearer ') ? header.slice(7) : '';
       if (!token) throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
       const payload = jwt.verify(token, cfg.jwtSecret);
-      const [rows] = await pool.query(`SELECT * FROM users WHERE id = ? AND status = 'active'`, [payload.sub]);
+      const [rows] = await pool.query(
+        `SELECT u.*, t.status AS tenant_status FROM users u JOIN tenants t ON t.id = u.tenant_id WHERE u.id = ? AND u.status = 'active'`,
+        [payload.sub],
+      );
       if (!rows[0]) throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
+      if (rows[0].tenant_status === 'suspended') throw suspendedError();
       req.user = rows[0];
       next();
     } catch (error) {
@@ -306,7 +317,10 @@ export function createApp(options = {}) {
   app.post('/api/auth/login', authLimit, wrap(async (req, res) => {
     const body = z.object({ email: z.string().trim().email().max(320), password: z.string().min(1).max(200), remember: z.boolean().optional() }).safeParse(req.body);
     if (!body.success) throw validationError(body.error.issues);
-    const [rows] = await pool.query(`SELECT * FROM users WHERE email = ?`, [body.data.email.toLowerCase()]);
+    const [rows] = await pool.query(
+      `SELECT u.*, t.status AS tenant_status FROM users u JOIN tenants t ON t.id = u.tenant_id WHERE u.email = ?`,
+      [body.data.email.toLowerCase()],
+    );
     const user = rows[0];
     const valid = await verifyPassword(body.data.password, user ? user.password_hash : await dummyHash);
     if (!user || !valid || user.status !== 'active') {
@@ -314,6 +328,11 @@ export function createApp(options = {}) {
       if (user) await writeAudit(pool, { tenantId: user.tenant_id, userId: user.id, action: 'auth.login_failed', entityType: 'user', entityId: user.id, result: 'failure', metadata: { reason: !valid ? 'bad_password' : 'inactive' } }).catch(() => {});
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     }
+    if (user.tenant_status === 'suspended') {
+      await writeAudit(pool, { tenantId: user.tenant_id, userId: user.id, action: 'auth.login_failed', entityType: 'user', entityId: user.id, result: 'failure', metadata: { reason: 'workspace_suspended' } }).catch(() => {});
+      throw suspendedError();
+    }
+    await pool.query(`UPDATE users SET last_login_at = UTC_TIMESTAMP(3) WHERE id = ?`, [user.id]);
     if (needsRehash(user.password_hash, cfg.bcryptRounds)) {
       // Upgrade older, weaker hashes transparently on a successful sign-in.
       await pool.query(`UPDATE users SET password_hash = ? WHERE id = ?`, [await hashPassword(body.data.password, cfg.bcryptRounds), user.id]);
@@ -348,16 +367,23 @@ export function createApp(options = {}) {
     }
     const [existing] = await pool.query(`SELECT id FROM users WHERE email = ? LIMIT 1`, [email]);
     if (existing[0]) throw new AppError(409, 'EMAIL_IN_USE', 'An account with this email already exists. Sign in instead.');
-    const [tenants] = await pool.query(`SELECT id FROM tenants WHERE slug = 'default' LIMIT 1`);
-    if (!tenants[0]) throw new AppError(503, 'NOT_CONFIGURED', 'The platform is not set up yet. Run npm run setup.');
-    const tenantId = tenants[0].id;
+    // Each self sign-up gets its own workspace (tenant) and is its administrator. It never joins
+    // the Default tenant or any existing tenant; people join an existing workspace only when an
+    // administrator of that workspace creates their account.
+    const tenantId = crypto.randomUUID();
+    const tenantName = organization.slice(0, 200) || `${displayName}'s workspace`.slice(0, 200);
+    const tenantSlug = `${organization.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'workspace'}-${crypto.randomBytes(4).toString('hex')}`;
     const userId = crypto.randomUUID();
     const projectId = crypto.randomUUID();
-    const role = cfg.signupRole || 'project_manager';
+    const role = 'administrator';
     const passwordHash = await hashPassword(password, cfg.bcryptRounds);
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+      await connection.query(
+        `INSERT INTO tenants (id, name, slug, isolation_enabled, created_at, updated_at) VALUES (?, ?, ?, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`,
+        [tenantId, tenantName, tenantSlug],
+      );
       await connection.query(
         `INSERT INTO users (id, tenant_id, email, display_name, password_hash, role, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, 'active', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`,
@@ -381,7 +407,7 @@ export function createApp(options = {}) {
       connection.release();
     }
     await fs.mkdir(path.join(cfg.storageRoot, tenantId, projectId), { recursive: true });
-    await writeAudit(pool, { tenantId, userId, action: 'auth.signup', entityType: 'user', entityId: userId, projectId, metadata: { organization, role }, ip: req.ip });
+    await writeAudit(pool, { tenantId, userId, action: 'auth.signup', entityType: 'user', entityId: userId, projectId, metadata: { organization, role, workspace: tenantSlug }, ip: req.ip });
     const [rows] = await pool.query(`SELECT * FROM users WHERE id = ?`, [userId]);
     res.status(201).json({ data: { accessToken: signAccess(rows[0]), refreshToken: await issueRefresh(rows[0]), user: presentUser(rows[0]), projectId } });
   }));
@@ -392,7 +418,8 @@ export function createApp(options = {}) {
     const [rows] = await pool.query(
       `SELECT t.id AS token_id, u.id, u.tenant_id, u.email, u.display_name, u.role, u.status
        FROM refresh_tokens t JOIN users u ON u.id = t.user_id
-       WHERE t.token_hash = ? AND t.revoked_at IS NULL AND t.expires_at > UTC_TIMESTAMP(3) AND u.status = 'active'`,
+       WHERE t.token_hash = ? AND t.revoked_at IS NULL AND t.expires_at > UTC_TIMESTAMP(3) AND u.status = 'active'
+         AND NOT EXISTS (SELECT 1 FROM tenants s WHERE s.id = u.tenant_id AND s.status = 'suspended')`,
       [sha256(token.data.refreshToken)],
     );
     if (!rows[0]) throw new AppError(401, 'UNAUTHORIZED', 'Refresh token is invalid');
@@ -1103,6 +1130,7 @@ export function createApp(options = {}) {
   }));
 
   registerInsightsRoutes(app, { pool, cfg, wrap, paging, requireUser, scope, scopeSql });
+  registerPlatformRoutes(app, { pool, wrap, paging, requireUser, like });
   app.patch('/api/settings/tenant', requireUser, requirePermission('users.manage'), wrap(async (req, res) => {
     const body = z.object({ name: z.string().trim().min(2).max(200) }).safeParse(req.body);
     if (!body.success) throw validationError(body.error.issues);
@@ -1201,8 +1229,12 @@ export function createApp(options = {}) {
       const header = req.headers.authorization || '';
       const token = header.startsWith('Bearer ') ? header.slice(7) : '';
       if (!token) throw new AppError(401, 'UNAUTHORIZED', 'Robot authentication required');
-      const [rows] = await pool.query(`SELECT * FROM automation_robots WHERE token_hash = ?`, [sha256(token)]);
+      const [rows] = await pool.query(
+        `SELECT r.*, t.status AS tenant_status FROM automation_robots r JOIN tenants t ON t.id = r.tenant_id WHERE r.token_hash = ?`,
+        [sha256(token)],
+      );
       if (!rows[0]) throw new AppError(401, 'UNAUTHORIZED', 'Robot authentication required');
+      if (rows[0].tenant_status === 'suspended') throw suspendedError();
       const [projects] = await pool.query(`SELECT project_id FROM robot_project_access WHERE robot_id = ?`, [rows[0].id]);
       req.robot = rows[0];
       req.robotProjectIds = projects.map((row) => row.project_id);

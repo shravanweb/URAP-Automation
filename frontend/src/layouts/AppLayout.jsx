@@ -29,7 +29,21 @@ export const SECTIONS = [
   ]],
 ];
 
+// Platform console, shown only to super admins (the API returns 404 to everyone else).
+export const PLATFORM_SECTION = ['Platform', [
+  ['/platform', 'Overview', 'shield'],
+  ['/platform/workspaces', 'Workspaces', 'grid'],
+  ['/platform/users', 'All Users', 'users'],
+  ['/platform/audit', 'Platform Audit', 'audit'],
+]];
+
+export function navSections(user) {
+  return user?.isSuperAdmin ? [...SECTIONS, PLATFORM_SECTION] : SECTIONS;
+}
+
 const TITLES = [
+  ['/platform/workspaces/', 'Workspace details'],
+  ...PLATFORM_SECTION[1].map(([to, label]) => [to, to === '/platform' ? 'Platform overview' : label]),
   ['/workflows/new', 'Workflow Builder'], ['/workflows/', 'Workflow Builder'], ['/workflows', 'Workflow Library'],
   ['/jobs/', 'Job details'], ['/tasks/', 'Action Center'],
   ...SECTIONS.flatMap(([, links]) => links.map(([to, label]) => [to, label])),
@@ -48,7 +62,7 @@ function initials(name = '') {
 function SideNav({ pending, onNavigate }) {
   return (
     <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label="Platform">
-      {SECTIONS.map(([section, links]) => (
+      {navSections(currentUser()).map(([section, links]) => (
         <div key={section} className="mt-5 first:mt-2">
           <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">{section}</p>
           <ul className="mt-1.5 space-y-0.5">
@@ -56,7 +70,7 @@ function SideNav({ pending, onNavigate }) {
               <li key={to}>
                 <NavLink
                   to={to}
-                  end={to === '/workflows'}
+                  end={to === '/workflows' || to === '/platform'}
                   onClick={onNavigate}
                   className={({ isActive }) => `group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${isActive ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
                 >

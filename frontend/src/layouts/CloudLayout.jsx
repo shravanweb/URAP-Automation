@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { api, clearSession, currentUser, getRefreshToken } from '../services/api.js';
 import { Icon } from '../components/brand.jsx';
 import { SECTIONS } from './AppLayout.jsx';
+import { AppLauncher } from '../components/AppLauncher.jsx';
 import logo from '../assets/logo.png';
 
 // Light "Automation Cloud" shell for the signed-in home page: a thin top bar with an app
@@ -45,152 +46,9 @@ function Backdrop({ onClose }) {
   return <button type="button" className="fixed inset-0 z-30 cursor-default" aria-hidden="true" tabIndex={-1} onClick={onClose} />;
 }
 
-// App launcher: groups are laid out in two columns (Overview + Build | Run + Govern, seven and
-// nine items) so there are no empty gaps. Each item has a tinted icon tile in its group
-// color and a one-line description.
-const GROUP_TONES = {
-  Overview: 'bg-slate-100 text-slate-600',
-  Build: 'bg-[#FFF1EC] text-[#D63A0C]',
-  Run: 'bg-[#E8F6F6] text-[#127C81]',
-  Govern: 'bg-[#F1EEFB] text-[#5B47B8]',
-};
-
-export const LAUNCHER_DESCRIPTIONS = {
-  '/dashboard': 'Your automation overview',
-  '/metrics': 'Counts, trends, and recent errors',
-  '/studio': 'Design and build automations',
-  '/projects': 'Organize work, files, and members',
-  '/workflows/new': 'Start a new workflow on the canvas',
-  '/workflows': 'Browse, publish, and run workflows',
-  '/connections': 'Credentials and integrations',
-  '/jobs': 'Monitor executions and retries',
-  '/schedules': 'Time-based triggers',
-  '/queues': 'Work queues and transaction items',
-  '/tasks': 'Approvals and human-in-the-loop tasks',
-  '/apps': 'Custom apps published for you',
-  '/cases': 'Work cases through stages and SLAs',
-  '/reports': 'Execution reports and exports',
-  '/audit': 'Who changed what, and when',
-  '/settings': 'Tenant, users, and robots',
-};
-
-const COLUMNS = [['Overview', 'Build'], ['Run', 'Govern']];
-
-function moveFocus(container, current, key) {
-  const items = [...container.querySelectorAll('[data-launcher-item]')];
-  const index = items.indexOf(current);
-  if (key === 'Home') return items[0];
-  if (key === 'End') return items[items.length - 1];
-  if (index < 0) return key === 'ArrowDown' ? items[0] : null;
-  if (key === 'ArrowDown') return items[(index + 1) % items.length];
-  if (key === 'ArrowUp') return items[(index - 1 + items.length) % items.length];
-  // Left/right: the closest item in the neighbouring column, by vertical position.
-  const from = current.getBoundingClientRect();
-  const candidates = items.filter((item) => {
-    const rect = item.getBoundingClientRect();
-    return key === 'ArrowRight' ? rect.left > from.right - 4 : rect.right < from.left + 4;
-  });
-  if (!candidates.length) return null;
-  const centre = (rect) => rect.top + rect.height / 2;
-  return candidates.reduce((best, item) => (Math.abs(centre(item.getBoundingClientRect()) - centre(from)) < Math.abs(centre(best.getBoundingClientRect()) - centre(from)) ? item : best));
-}
-
-export function Launcher({ pending, tenant, onNavigate, onHelp }) {
-  const ref = useRef(null);
-  const [filter, setFilter] = useState('');
-  const groups = Object.fromEntries(SECTIONS.map(([section, links]) => [section, links]));
-  const needle = filter.trim().toLowerCase();
-  const visible = (links) => links.filter(([to, label]) => !needle || `${label} ${LAUNCHER_DESCRIPTIONS[to] || ''}`.toLowerCase().includes(needle));
-  const total = SECTIONS.reduce((sum, [, links]) => sum + visible(links).length, 0);
-
-  useEffect(() => {
-    const active = ref.current?.querySelector('[data-launcher-item][aria-current="page"]');
-    (active || ref.current?.querySelector('[data-launcher-item]'))?.focus();
-  }, []);
-
-  const onKeyDown = (event) => {
-    if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    const inInput = event.target.tagName === 'INPUT';
-    if (inInput && event.key !== 'ArrowDown') return;
-    const next = moveFocus(ref.current, inInput ? null : document.activeElement, event.key);
-    if (next) { event.preventDefault(); next.focus(); }
-  };
-
-  return (
-    <div
-      ref={ref}
-      id="app-launcher"
-      role="dialog"
-      aria-label="App launcher"
-      onKeyDown={onKeyDown}
-      className="absolute left-0 z-40 mt-2.5 w-[min(94vw,720px)] origin-top-left overflow-hidden rounded-2xl u-card shadow-[0_1px_2px_rgba(23,33,37,0.05),0_12px_24px_-8px_rgba(23,33,37,0.12),0_32px_64px_-24px_rgba(23,33,37,0.22)] animate-[launcher-in_140ms_cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:animate-none"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#ECE8E3] px-5 py-4">
-        <div className="min-w-0">
-          <p className="text-[15px] font-semibold tracking-tight text-ink">URAP Automation Cloud</p>
-          <p className="truncate text-xs text-slate-500">{tenant?.name ? `${tenant.name} · ` : ''}Switch to any service</p>
-        </div>
-        <label className="relative w-full sm:w-56">
-          <span className="sr-only">Filter services</span>
-          <Icon name="search" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter services" className="h-8 w-full rounded-lg border border-[#ECE8E3] bg-[#F6F4F1] pl-8 pr-3 text-[13px] text-ink placeholder:text-slate-400 focus:border-[#DCCFC4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand/10" />
-        </label>
-      </div>
-
-      <div className="max-h-[min(70vh,600px)] overflow-y-auto px-3 py-3">
-        {total === 0 ? <p className="px-3 py-10 text-center text-[13px] text-slate-500">No services match “{filter}”.</p> : (
-          <div className="grid gap-x-2 sm:grid-cols-2">
-            {COLUMNS.map((column) => (
-              <div key={column.join()} className="min-w-0">
-                {column.map((section) => {
-                  const links = visible(groups[section] || []);
-                  if (!links.length) return null;
-                  return (
-                    <div key={section} className="mb-2 last:mb-0" role="group" aria-label={section}>
-                      <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{section}</p>
-                      <ul>
-                        {links.map(([to, label, icon]) => (
-                          <li key={to}>
-                            <NavLink
-                              to={to}
-                              end
-                              data-launcher-item
-                              onClick={onNavigate}
-                              className={({ isActive }) => `group relative flex items-center gap-3 rounded-xl px-3 py-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ember/35 ${isActive ? 'bg-[#FAF6F3] ring-1 ring-inset ring-[#F1E4DA]' : 'hover:bg-[#F6F4F1] focus-visible:bg-[#F6F4F1]'}`}
-                            >
-                              {({ isActive }) => (
-                                <>
-                                  {isActive && <span className="absolute inset-y-2.5 left-0 w-[3px] rounded-r-full bg-ember" aria-hidden="true" />}
-                                  <span className={`u-tile grid h-9 w-9 shrink-0 place-items-center rounded-lg ${GROUP_TONES[section] || GROUP_TONES.Overview}`}><Icon name={icon} className="h-[18px] w-[18px]" strokeWidth={1.8} /></span>
-                                  <span className="min-w-0 flex-1">
-                                    <span className="block truncate text-[14px] font-semibold leading-5 text-ink">{label}</span>
-                                    <span className="block truncate text-[12.5px] leading-[18px] text-slate-500">{LAUNCHER_DESCRIPTIONS[to]}</span>
-                                  </span>
-                                  {to === '/tasks' && pending > 0 && <span className="rounded-full bg-brand px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none text-white" aria-label={`${pending} pending`}>{pending}</span>}
-                                  {isActive && <span className="sr-only">(current page)</span>}
-                                </>
-                              )}
-                            </NavLink>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[#ECE8E3] bg-[#FCFBFA] px-5 py-3 text-[12.5px] text-slate-500">
-        <Link to="/settings" onClick={onNavigate} className="inline-flex items-center gap-1.5 rounded hover:text-ink"><Icon name="settings" className="h-3.5 w-3.5" />Settings</Link>
-        <button type="button" onClick={onHelp} className="inline-flex items-center gap-1.5 rounded hover:text-ink"><Icon name="help" className="h-3.5 w-3.5" />Help &amp; shortcuts</button>
-        <Link to="/dashboard#whats-new" onClick={onNavigate} className="inline-flex items-center gap-1.5 rounded hover:text-ink"><Icon name="sparkle" className="h-3.5 w-3.5" />What's new</Link>
-        <span className="ml-auto hidden items-center gap-1 sm:inline-flex"><kbd className="rounded border border-[#ECE8E3] bg-white px-1 text-[11px]">↑</kbd><kbd className="rounded border border-[#ECE8E3] bg-white px-1 text-[11px]">↓</kbd> to move · <kbd className="rounded border border-[#ECE8E3] bg-white px-1 text-[11px]">Esc</kbd> to close</span>
-      </div>
-    </div>
-  );
+// App launcher: see components/AppLauncher.jsx.
+export function Launcher(props) {
+  return <AppLauncher user={currentUser()} {...props} />;
 }
 
 function SearchDialog({ onClose }) {
@@ -256,12 +114,14 @@ export default function CloudLayout() {
   const [welcome, setWelcome] = useState(Boolean(location.state?.welcome));
   const close = useMemo(() => () => setOpen(''), []);
   useDismiss(Boolean(open), close);
+  // Any navigation closes open menus and the launcher.
+  useEffect(() => { setOpen(''); }, [location.pathname, location.hash]);
   const toggle = (name) => setOpen((current) => (current === name ? '' : name));
   const appsButton = useRef(null);
   const wasOpen = useRef('');
   // When the launcher closes (Esc, click outside), return focus to the grid button.
   useEffect(() => {
-    if (wasOpen.current === 'apps' && open !== 'apps' && (!document.activeElement || document.activeElement === document.body)) appsButton.current?.focus({ preventScroll: true });
+    if (wasOpen.current.startsWith('apps') && !open.startsWith('apps') && (!document.activeElement || document.activeElement === document.body)) appsButton.current?.focus({ preventScroll: true });
     wasOpen.current = open;
   }, [open]);
 
@@ -279,7 +139,7 @@ export default function CloudLayout() {
 
   useEffect(() => {
     const onKey = (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setOpen('search'); }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setOpen('apps-search'); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -304,10 +164,10 @@ export default function CloudLayout() {
       <a href="#app-main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-white focus:px-4 focus:py-2">Skip to content</a>
       <header className="sticky top-0 z-40 flex h-14 items-center gap-1 border-b border-[rgba(23,33,37,0.07)] bg-white/95 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-white/80 sm:px-4">
         <div className="relative">
-          <button ref={appsButton} type="button" className={iconButton} aria-label="All services" aria-haspopup="dialog" aria-controls="app-launcher" aria-expanded={open === 'apps'} onClick={() => toggle('apps')}>
+          <button ref={appsButton} type="button" className={iconButton} aria-label="All services" aria-haspopup="dialog" aria-controls="app-launcher" aria-expanded={open === 'apps' || open === 'apps-search'} onClick={() => setOpen((c) => (c.startsWith('apps') ? '' : 'apps'))}>
             <Icon name="grid" className="h-5 w-5" strokeWidth={2.4} />
           </button>
-          {open === 'apps' && <><Backdrop onClose={close} /><Launcher pending={pending} tenant={tenant} onNavigate={close} onHelp={() => setOpen('help')} /></>}
+          {(open === 'apps' || open === 'apps-search') && <><Backdrop onClose={close} /><Launcher pending={pending} tenant={tenant} onNavigate={close} onHelp={() => setOpen('help')} autoFocusSearch={open === 'apps-search'} /></>}
         </div>
         <Link to="/dashboard" className="ml-1 flex items-center gap-2.5 rounded-md px-1 py-1" aria-label={`URAP ${product}, go to home`}>
           <img src={logo} alt="URAP" className="h-9 w-auto" />

@@ -30,14 +30,14 @@ describe('self sign-up', () => {
     expect(response.body.data).toMatchObject({ allowSignup: true, passwordReset: 'administrator', passwordMinLength: 12 });
   });
 
-  it('creates a project manager with a starter project, signs them in, and lets them sign in again', async () => {
+  it('creates a new workspace with the user as its administrator and a starter project, signs them in, and lets them sign in again', async () => {
     const body = signupBody({ email: 'New.User@Example.com' });
     const response = await request(app).post('/api/auth/signup').send(body);
     expect(response.status).toBe(201);
     const { accessToken, refreshToken, user, projectId } = response.body.data;
     expect(accessToken).toBeTruthy();
     expect(refreshToken).toBeTruthy();
-    expect(user).toMatchObject({ email: 'new.user@example.com', displayName: 'Asha Rao', role: 'project_manager', status: 'active' });
+    expect(user).toMatchObject({ email: 'new.user@example.com', displayName: 'Asha Rao', role: 'administrator', status: 'active' });
     expect(user).not.toHaveProperty('passwordHash');
 
     const me = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${accessToken}`);
@@ -52,8 +52,14 @@ describe('self sign-up', () => {
       projectId, name: 'First workflow', description: 'Created after sign-up', executionType: 'native',
     });
     expect(workflow.status).toBe(201);
-    // It is not an administrator.
-    expect((await request(app).get('/api/users').set('Authorization', `Bearer ${accessToken}`)).status).toBe(403);
+    // It administers only its own new workspace, never the Default tenant.
+    expect(user.tenantId).not.toBe('00000000-0000-4000-8000-000000000001');
+    const users = await request(app).get('/api/users').set('Authorization', `Bearer ${accessToken}`);
+    expect(users.status).toBe(200);
+    expect(users.body.data.map((u) => u.email)).toEqual(['new.user@example.com']);
+    const [tenant] = await pool.query(`SELECT name, slug FROM tenants WHERE id = ?`, [user.tenantId]);
+    expect(tenant[0].name).toBe('Northwind Traders');
+    expect(tenant[0].slug).toMatch(/^northwind-traders-[0-9a-f]{8}$/);
 
     const login = await request(app).post('/api/auth/login').send({ email: 'new.user@example.com', password: body.password });
     expect(login.status).toBe(200);

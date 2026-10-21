@@ -167,6 +167,6 @@ describe('added step types and helpers', () => {
     expect(() => priorityValue('urgent')).toThrow(/priority/);
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../database/migrations');
     const migrations = await listMigrations(root);
-    expect(migrations.map((item) => item.id)).toEqual(['002_work_queues', '003_action_center', '004_flows', '005_agents', '006_apps', '007_cases', '008_bpmn', '009_audit_details']);
+    expect(migrations.map((item) => item.id)).toEqual(['002_work_queues', '003_action_center', '004_flows', '005_agents', '006_apps', '007_cases', '008_bpmn', '009_audit_details', '010_platform_admin']);
   });
 });

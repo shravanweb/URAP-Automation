@@ -111,7 +111,8 @@ async function writeRobotInbox(cfg, payload) {
 export async function claimNext(pool, target, actor = {}) {
   const params = [target];
   let sql = `SELECT id FROM automation_jobs
-    WHERE execution_target = ? AND status = 'QUEUED' AND available_at <= UTC_TIMESTAMP(3)`;
+    WHERE execution_target = ? AND status = 'QUEUED' AND available_at <= UTC_TIMESTAMP(3)
+      AND NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = automation_jobs.tenant_id AND t.status = 'suspended')`;
   if (actor.projectIds) {
     if (!actor.projectIds.length) return null;
     sql += ` AND project_id IN (${actor.projectIds.map(() => '?').join(',')})`;

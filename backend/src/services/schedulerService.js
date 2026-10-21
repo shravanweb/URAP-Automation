@@ -30,6 +30,7 @@ export async function runDueSchedules(pool, cfg) {
        WHERE enabled = 1 AND schedule_type IN ('once', 'recurring')
          AND next_run_at IS NOT NULL AND next_run_at <= UTC_TIMESTAMP(3)
          AND (lock_until IS NULL OR lock_until < UTC_TIMESTAMP(3))
+         AND NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = schedules.tenant_id AND t.status = 'suspended')
        ORDER BY next_run_at ASC
        LIMIT 10
        FOR UPDATE SKIP LOCKED`,
