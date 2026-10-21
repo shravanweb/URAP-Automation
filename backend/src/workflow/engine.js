@@ -167,6 +167,7 @@ export async function executeWorkflow(definition, input, services, hooks = {}, d
       const resumed = steps.get(resume.stepId);
       if (!resumed) throw new AppError(409, 'RESUME_FAILED', `The workflow no longer has step ${resume.stepId}`);
       context.steps[resumed.id] = resume.output;
+      applyReviewedValues(resumed, resume.output, context);
       await hooks.onStep?.({ step: resumed, status: 'SUCCEEDED', startedAt: new Date(), finishedAt: new Date(), durationMs: 0, output: resume.output, iteration: null });
       for (const id of Object.keys(context.steps)) seen.add(id);
       currentId = resumed.next || null;
@@ -197,4 +198,18 @@ export async function executeWorkflow(definition, input, services, hooks = {}, d
       steps: context.steps,
     };
   }
+}
+
+// A validation task created with data '{{steps.X.values}}' returns the reviewer's corrected values.
+// Fold them back into steps.X.values so later steps that read the extraction (e.g. Write CSV)
+// use what the reviewer approved. Only keys the task showed are replaced.
+export function applyReviewedValues(step, output, context) {
+  const values = output?.values;
+  if (!values || typeof values !== 'object' || output.outcome === 'reject') return;
+  const match = /^\{\{\s*steps\.([A-Za-z0-9_\-]+)\.values\s*\}\}$/.exec(String(step?.config?.data ?? '').trim());
+  const source = match && context.steps[match[1]];
+  if (!source || typeof source !== 'object' || !source.values || typeof source.values !== 'object') return;
+  const merged = { ...source.values };
+  for (const key of Object.keys(source.values)) if (Object.prototype.hasOwnProperty.call(values, key)) merged[key] = values[key];
+  context.steps[match[1]] = { ...source, values: merged, reviewed: true };
 }

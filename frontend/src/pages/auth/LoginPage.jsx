@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { api, saveSession } from '../../services/api.js';
+import { api, clearExpiredNotice, readExpiredNotice, saveSession } from '../../services/api.js';
 import AuthLayout, { Alert, FieldError, PasswordInput, Spinner, useAuthOptions } from './AuthLayout.jsx';
 
 const schema = z.object({
@@ -31,13 +31,16 @@ export default function LoginPage() {
     resolver: zodResolver(schema),
     defaultValues: { email: location.state?.email || '', password: '', remember: false },
   });
-  const from = typeof location.state?.from === 'string' && location.state.from.startsWith('/') ? location.state.from : '/dashboard';
+  const [expired] = useState(() => readExpiredNotice());
+  const stateFrom = typeof location.state?.from === 'string' && location.state.from.startsWith('/') ? location.state.from : null;
+  const from = stateFrom || expired?.from || '/dashboard';
 
   const onSubmit = async (values) => {
     setError('');
     try {
       const result = await api('/api/auth/login', { method: 'POST', body: { email: values.email.trim(), password: values.password } });
       saveSession(result.data, { remember: Boolean(values.remember) });
+      clearExpiredNotice();
       navigate(from, { replace: true });
     } catch (err) {
       setError(loginErrorMessage(err));
@@ -53,8 +56,9 @@ export default function LoginPage() {
       <h1 className="auth-heading text-[1.75rem] font-bold leading-tight tracking-[-0.02em] text-ink sm:text-3xl">Sign in to URAP</h1>
       <p className="auth-muted mt-2 text-[15px] text-slate-600">Welcome back. Enter your work email and password to continue.</p>
 
+      {expired && !error && <div className="mt-6"><Alert tone="info">Session expired, please sign in again.</Alert></div>}
       {location.state?.signedOut && !error && <div className="mt-6"><Alert tone="info">You have been signed out.</Alert></div>}
-      {location.state?.from && !error && !location.state?.signedOut && <div className="mt-6"><Alert tone="info">Sign in to continue to that page.</Alert></div>}
+      {location.state?.from && !expired && !error && !location.state?.signedOut && <div className="mt-6"><Alert tone="info">Sign in to continue to that page.</Alert></div>}
 
       <form className="mt-8 space-y-5" noValidate onSubmit={handleSubmit(onSubmit)} aria-busy={isSubmitting}>
         <div aria-live="assertive"><Alert id="login-error">{error}</Alert></div>

@@ -10,6 +10,33 @@ import { Icon } from '../components/brand.jsx';
 import { templateByKey } from '../lib/workflowTemplates.js';
 import { useRunWorkflow } from '../components/RunInputDialog.jsx';
 
+const EXECUTION = { native: { icon: 'bolt', label: 'Native' }, uipath: { icon: 'robot', label: 'Robot' }, hybrid: { icon: 'parallel', label: 'Hybrid' }, desktop: { icon: 'monitor', label: 'Desktop' }, web: { icon: 'globe', label: 'Web' } };
+const parseDate = (value) => new Date(String(value || '').includes('T') ? value : `${String(value || '').replace(' ', 'T')}Z`);
+function friendlyDate(value) {
+  const date = parseDate(value);
+  return value && !Number.isNaN(date.getTime()) ? date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : String(value || '—');
+}
+function fullDate(value) {
+  const date = parseDate(value);
+  return value && !Number.isNaN(date.getTime()) ? date.toLocaleString() : String(value || '');
+}
+const ACTION_TINTS = {
+  orange: { icon: 'text-[#E03A0E]', hover: 'hover:border-[#F6CDB9] hover:bg-[#FFF6F1]' },
+  blue: { icon: 'text-[#3B6FB6]', hover: 'hover:border-[#C9D9EE] hover:bg-[#F1F6FC]' },
+  green: { icon: 'text-[#2F8A57]', hover: 'hover:border-[#C6E3D2] hover:bg-[#F1FAF4]' },
+  red: { icon: 'text-[#B4473C]', hover: 'hover:border-[#E8C4C0] hover:bg-[#FBF1F0]' },
+};
+function RowAction({ icon, label, onClick, tint = 'blue' }) {
+  const look = ACTION_TINTS[tint];
+  return (
+    <button type="button" title={label} aria-label={label} onClick={onClick}
+      className={`inline-flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-lg border border-[#E6E1DA] bg-white px-2 text-[12.5px] font-medium text-[#4A5568] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FA4616]/40 ${look.hover}`}>
+      <Icon name={icon} className={`h-4 w-4 ${look.icon}`} /><span className="hidden 2xl:inline">{label}</span>
+    </button>
+  );
+}
+const chip = 'inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#E6E1DA] bg-[#F7F5F2] px-2 py-0.5 text-xs text-[#4A5568]';
+
 const START_STEPS = [
   { id: 'start', type: 'start', name: 'Start', config: { designer: { x: 48, y: 36 } }, errorPolicy: 'fail', next: 'end' },
   { id: 'end', type: 'end', name: 'End', config: { summaryFrom: [], designer: { x: 48, y: 168 } }, errorPolicy: 'fail', next: null },
@@ -63,31 +90,33 @@ function WorkflowLibrary() {
       {runDialog}
       <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Workflow library</h1>{canWrite(user?.role) && <Link className={buttonClass} to="/workflows/new">New workflow</Link>}</div>
       <form className="grid gap-2 md:grid-cols-4" onSubmit={(event) => { event.preventDefault(); load().catch((err) => setError(err.message)); }}>
-        <input className={inputClass} placeholder="Search name" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} />
-        <select className={inputClass} value={filters.projectId} onChange={(event) => setFilters({ ...filters, projectId: event.target.value })}><option value="">All projects</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-        <select className={inputClass} value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Any status</option><option value="draft">Draft</option><option value="published">Published</option><option value="disabled">Disabled</option></select>
-        <button className={buttonClass} type="submit">Apply</button>
+        <input className={`${inputClass} h-10`} placeholder="Search name" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} />
+        <select className={`${inputClass} h-10`} value={filters.projectId} onChange={(event) => setFilters({ ...filters, projectId: event.target.value })}><option value="">All projects</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
+        <select className={`${inputClass} h-10`} value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Any status</option><option value="draft">Draft</option><option value="published">Published</option><option value="disabled">Disabled</option></select>
+        <button className={`${buttonClass} h-10`} type="submit">Apply</button>
       </form>
       <ErrorText>{error}</ErrorText>
       {message && <p className="text-sm text-success" role="status">{message}</p>}
       {rows.length === 0 ? <EmptyState title="No workflows" body="Build a workflow, validate it, and publish a version before running it." /> : (
         <div className="overflow-auto rounded-lg border border-line bg-white">
-          <table className="min-w-full text-sm"><thead className="bg-cream2 text-muted"><tr><th className="px-3 py-2 text-left">Name</th><th className="px-3 py-2 text-left">Project</th><th className="px-3 py-2 text-left">Execution</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">Updated</th><th className="px-3 py-2" /></tr></thead>
-            <tbody>{rows.map((row) => (
+          <table className="w-full table-fixed text-left text-sm"><thead className="bg-cream2 text-muted"><tr><th className="px-3 py-2">Name</th><th className="w-48 px-3 py-2">Project</th><th className="w-32 px-3 py-2">Execution</th><th className="w-28 px-3 py-2">Status</th><th className="w-32 px-3 py-2">Updated</th><th className="w-36 px-3 py-2 2xl:w-[19rem]"><span className="sr-only">Actions</span></th></tr></thead>
+            <tbody>{rows.map((row) => {
+              const exec = EXECUTION[row.execution_type] || { icon: 'flow', label: row.execution_type || '—' };
+              return (
               <tr key={row.id} className="border-t border-line">
-                <td className="px-3 py-2"><Link className="font-medium text-emberdark" to={`/workflows/${row.id}`}>{row.name}</Link><p className="text-muted">{row.description}</p></td>
-                <td className="px-3 py-2">{projectName(row.project_id)}</td>
-                <td className="px-3 py-2">{row.execution_type}</td>
+                <td className="max-w-0 px-3 py-2"><Link className="block truncate font-medium text-emberdark" title={row.name} to={`/workflows/${row.id}`}>{row.name}</Link>{row.description && <p className="truncate text-muted" title={row.description}>{row.description}</p>}</td>
+                <td className="max-w-0 px-3 py-2"><span className={chip} title={projectName(row.project_id)}><Icon name="folder" className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{projectName(row.project_id)}</span></span></td>
+                <td className="whitespace-nowrap px-3 py-2"><span className={chip}><Icon name={exec.icon} className="h-3.5 w-3.5" />{exec.label}</span></td>
                 <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
-                <td className="px-3 py-2">{row.updated_at}</td>
-                <td className="px-3 py-2"><div className="flex flex-wrap justify-end gap-1">
-                  {row.status === 'published' && canRun(user?.role) && <button className={quietClass} type="button" onClick={() => listRun(row)}>Run</button>}
-                  {canWrite(user?.role) && <button className={quietClass} type="button" onClick={() => act('Cloned as a new draft', () => api(`/api/workflows/${row.id}/clone`, { method: 'POST' }))}>Clone</button>}
-                  {canWrite(user?.role) && row.status === 'published' && <button className={quietClass} type="button" onClick={() => act('Disabled', () => api(`/api/workflows/${row.id}/disable`, { method: 'POST' }))}>Disable</button>}
-                  {canWrite(user?.role) && row.status === 'disabled' && <button className={quietClass} type="button" onClick={() => act('Enabled', () => api(`/api/workflows/${row.id}/enable`, { method: 'POST' }))}>Enable</button>}
+                <td className="whitespace-nowrap px-3 py-2 text-[#4A5568]" title={fullDate(row.updated_at)}>{friendlyDate(row.updated_at)}</td>
+                <td className="whitespace-nowrap px-3 py-2"><div className="flex flex-nowrap justify-end gap-1">
+                  {row.status === 'published' && canRun(user?.role) && <RowAction tint="orange" icon="play" label="Run" onClick={() => listRun(row)} />}
+                  {canWrite(user?.role) && <RowAction tint="blue" icon="copy" label="Clone" onClick={() => act('Cloned as a new draft', () => api(`/api/workflows/${row.id}/clone`, { method: 'POST' }))} />}
+                  {canWrite(user?.role) && row.status === 'published' && <RowAction tint="red" icon="power" label="Disable" onClick={() => act('Disabled', () => api(`/api/workflows/${row.id}/disable`, { method: 'POST' }))} />}
+                  {canWrite(user?.role) && row.status === 'disabled' && <RowAction tint="green" icon="power" label="Enable" onClick={() => act('Enabled', () => api(`/api/workflows/${row.id}/enable`, { method: 'POST' }))} />}
                 </div></td>
               </tr>
-            ))}</tbody>
+            ); })}</tbody>
           </table>
         </div>
       )}
@@ -105,6 +134,8 @@ function WorkflowDesigner() {
   const [message, setMessage] = useState('');
   const [workflowId, setWorkflowId] = useState(params.id || '');
   const [workflow, setWorkflow] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [reloadTick, setReloadTick] = useState(0);
   // Studio entry points: ?projectId= preselects the project, ?palette= pre-filters the activity
   // palette, ?import=codegen opens the recorder on its Playwright codegen import tab, and
   // ?template=<key> pre-fills a new workflow from lib/workflowTemplates.js (Home / Studio cards).
@@ -142,8 +173,12 @@ function WorkflowDesigner() {
 
   useEffect(() => {
     api('/api/projects?limit=100&status=active').then((result) => setProjects(result.data)).catch((err) => setError(err.message));
-    if (params.id) loadWorkflow(params.id).catch((err) => setError(err.message));
-  }, [params.id]);
+    if (params.id) {
+      setLoadError('');
+      // A session that truly expired redirects to sign-in; keep showing "Loading" meanwhile.
+      loadWorkflow(params.id).catch((err) => { if (err.code !== 'SESSION_EXPIRED') setLoadError(err.message); });
+    }
+  }, [params.id, reloadTick]);
 
   useEffect(() => {
     if (!form.projectId) { setConnections([]); return; }
@@ -427,6 +462,26 @@ function WorkflowDesigner() {
   const label = 'block text-[12px] font-medium text-[#4A555C]';
   const propInput = 'mt-1 h-9 w-full rounded-lg border border-[#E2DCD5] bg-white px-2.5 text-[13px] text-[#172125] focus:border-[#E9521F] focus:outline-none focus:ring-2 focus:ring-[#E9521F]/15';
   const panelHead = 'flex h-11 shrink-0 items-center justify-between border-b border-[#ECE8E3] px-4';
+
+  // An existing workflow id never falls back to a blank "New workflow" canvas.
+  if (params.id && workflow?.id !== params.id) {
+    return (
+      <section className="grid min-h-[50vh] place-items-center" aria-live="polite">
+        {loadError ? (
+          <div className="max-w-sm rounded-xl border border-[#E6E1DA] bg-white p-6 text-center">
+            <p className="text-sm font-semibold text-[#1F2933]">Could not open this workflow</p>
+            <p className="mt-1 text-[13px] text-[#6B7280]">{loadError}</p>
+            <div className="mt-4 flex justify-center gap-2">
+              <button type="button" className={buttonClass} onClick={() => setReloadTick((n) => n + 1)}>Try again</button>
+              <Link className={quietClass} to="/workflows">Workflow library</Link>
+            </div>
+          </div>
+        ) : (
+          <p className="flex items-center gap-2 text-sm text-[#6B7280]"><span className="h-4 w-4 animate-spin rounded-full border-2 border-[#E6E1DA] border-t-[#FA4616]" aria-hidden="true" />Loading workflow…</p>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section ref={sectionRef} className={`flex flex-col bg-[#F7F5F2] text-[#172125] ${fullscreen ? 'h-screen' : 'min-h-[calc(100vh-3.5rem)] lg:h-[calc(100vh-3.5rem)]'}`}>

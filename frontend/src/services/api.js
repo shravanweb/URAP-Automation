@@ -46,27 +46,106 @@ export function clearSession() {
   store('local')?.removeItem(REMEMBER);
 }
 
-async function refresh() {
+export const EXPIRED_KEY = 'urap.expired';
+
+// One refresh at a time, shared by every request in this tab (a page that loads five things at
+// once after the access token expired must not fire five refreshes: the server rotates the refresh
+// token, so all but the first would present a revoked token and sign the user out). Across tabs,
+// navigator.locks serialises refreshes; a tab that waited re-reads storage and reuses the tokens
+// the other tab just saved instead of refreshing again.
+let inflight = null;
+
+async function withRefreshLock(task) {
+  const locks = globalThis.navigator?.locks;
+  if (locks?.request) return locks.request('urap-refresh', task);
+  return task();
+}
+
+async function refreshOnce(staleRefresh) {
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
-  const response = await fetch('/api/auth/refresh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
-  });
-  if (!response.ok) {
-    clearSession();
-    return false;
+  if (!refreshToken) return 'expired';
+  if (staleRefresh && refreshToken !== staleRefresh) return 'ok'; // another tab already refreshed
+  let response;
+  try {
+    response = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+  } catch {
+    return 'offline'; // network trouble is not an expired session; keep the tokens
   }
-  saveSession((await response.json()).data);
-  return true;
+  if (response.ok) {
+    saveSession((await response.json()).data);
+    return 'ok';
+  }
+  if (response.status === 401 || response.status === 400) {
+    // Lost a race with another tab that rotated the same token a moment ago: use its tokens.
+    if (getRefreshToken() && getRefreshToken() !== refreshToken) return 'ok';
+    return 'expired';
+  }
+  return 'offline';
+}
+
+/** Refreshes the session once for all concurrent callers. Resolves 'ok' | 'expired' | 'offline'. */
+export function refreshSession() {
+  if (!inflight) {
+    const stale = getRefreshToken();
+    inflight = withRefreshLock(() => refreshOnce(stale)).finally(() => { inflight = null; });
+  }
+  return inflight;
+}
+
+/** Indirection so tests can observe the redirect (jsdom cannot navigate). */
+export const redirect = { to: (url) => globalThis.location.assign(url) };
+
+/** The session is gone: clear it and send the user to sign in, back to this page afterwards. */
+export function sessionExpired() {
+  clearSession();
+  const loc = globalThis.location;
+  if (!loc) return;
+  const from = `${loc.pathname}${loc.search}${loc.hash || ''}`;
+  try { globalThis.sessionStorage?.setItem(EXPIRED_KEY, JSON.stringify({ from })); } catch { /* ignore */ }
+  if (!loc.pathname.startsWith('/login')) redirect.to('/login');
+}
+
+export function clearExpiredNotice() {
+  try { globalThis.sessionStorage?.removeItem(EXPIRED_KEY); } catch { /* ignore */ }
+}
+
+/**
+ * Every API call that ends in 401 after a failed refresh lands here: sign out, go to sign-in.
+ * The error has an empty message so pages never flash a red "Invalid or expired token" banner.
+ */
+export function expiredError() {
+  sessionExpired();
+  const error = new Error('');
+  error.status = 401;
+  error.code = 'SESSION_EXPIRED';
+  error.sessionExpired = true;
+  return error;
+}
+
+/** For the sign-in page: { from } when the last session expired, else null (cleared on sign-in). */
+export function readExpiredNotice() {
+  try {
+    const raw = globalThis.sessionStorage?.getItem(EXPIRED_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return { from: typeof parsed?.from === 'string' && parsed.from.startsWith('/') && !parsed.from.startsWith('//') ? parsed.from : null };
+  } catch { return null; }
 }
 
 export async function download(path, filename) {
   const headers = {};
-  const token = getAccessToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetch(path, { headers });
+  const go = () => { const token = getAccessToken(); if (token) headers.Authorization = `Bearer ${token}`; return fetch(path, { headers }); };
+  let response = await go();
+  if (response.status === 401) {
+    const outcome = await refreshSession();
+    if (outcome === 'offline') throw new Error('The server could not be reached. Check that the API is running.');
+    if (outcome === 'ok') response = await go();
+    if (outcome === 'expired' || response.status === 401) throw expiredError();
+  }
   if (!response.ok) throw new Error('Download failed');
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
@@ -80,17 +159,29 @@ export async function download(path, filename) {
 export async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-  const token = getAccessToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const request = () => fetch(path, {
-    ...options,
-    headers,
-    body: options.body && !(options.body instanceof FormData) ? JSON.stringify(options.body) : options.body,
-  });
+  const request = () => {
+    const token = getAccessToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return fetch(path, {
+      ...options,
+      headers,
+      body: options.body && !(options.body instanceof FormData) ? JSON.stringify(options.body) : options.body,
+    });
+  };
+  const sentWith = getAccessToken();
   let response = await request();
-  if (response.status === 401 && !path.startsWith('/api/auth/') && await refresh()) {
-    headers.Authorization = `Bearer ${getAccessToken()}`;
-    response = await request();
+  // Only a signed-in page is signed out; public pages calling the API without a session are not.
+  if (response.status === 401 && !path.startsWith('/api/auth/') && (sentWith || getRefreshToken() || currentUser())) {
+    // Another request may already have refreshed while this one was in flight: just retry.
+    const outcome = !getRefreshToken() ? 'expired'
+      : getAccessToken() && getAccessToken() !== sentWith ? 'ok' : await refreshSession();
+    if (outcome === 'offline') {
+      const error = new Error('The server could not be reached. Check that the API is running.');
+      error.status = 503;
+      throw error;
+    }
+    if (outcome === 'ok') response = await request();
+    if (outcome === 'expired' || response.status === 401) throw expiredError();
   }
   const type = response.headers.get('content-type') || '';
   if (!type.includes('json')) {

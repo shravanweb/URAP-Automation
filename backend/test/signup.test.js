@@ -147,3 +147,16 @@ describe('console password reset', () => {
     await expect(resetPassword(pool, body.email, 'short', 4)).rejects.toThrow(/12 characters/);
   });
 });
+
+describe('refresh token rotation', () => {
+  it('lets only one of two concurrent refreshes with the same token win', async () => {
+    const created = await request(app).post('/api/auth/signup').send(signupBody());
+    const { refreshToken } = created.body.data;
+    const results = await Promise.all([1, 2, 3].map(() => request(app).post('/api/auth/refresh').send({ refreshToken })));
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 401, 401]);
+    const winner = results.find((r) => r.status === 200).body.data;
+    expect((await request(app).get('/api/auth/me').set('Authorization', `Bearer ${winner.accessToken}`)).status).toBe(200);
+    expect((await request(app).post('/api/auth/refresh').send({ refreshToken: winner.refreshToken })).status).toBe(200);
+  });
+});

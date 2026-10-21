@@ -13,7 +13,9 @@ const CURRENCY_SYMBOLS = { '₹': 'INR', 'rs': 'INR', 'rs.': 'INR', '$': 'USD', 
 const CURRENCY_CODES = ['INR', 'USD', 'EUR', 'GBP', 'AUD', 'CAD', 'SGD', 'AED', 'JPY', 'CHF', 'CNY', 'NZD', 'ZAR'];
 
 export const VALUE_PATTERNS = {
-  id: String.raw`(?=[A-Z0-9\-/_.#]*\d)[A-Z0-9][A-Z0-9\-/_.#]{0,40}`,
+  // An id may carry a short letter prefix split off by a dash or spaces ("INV - 2025001", "ARK 2025001");
+  // findField only keeps a spaced prefix when it is upper case, so "Invoice Date 01/02" is not an id.
+  id: String.raw`(?:[A-Z]{1,6}[ \t]*[\-–/][ \t]*|[A-Z]{1,6}[ \t]{1,3})?(?=[A-Z0-9\-/_.#]*\d)[A-Z0-9][A-Z0-9\-/_.#]{0,40}`,
   string: String.raw`[^\n]{1,120}`,
   amount: String.raw`(?:(?:[A-Z]{3}|Rs\.?|[₹$€£¥])\s?)?-?\d{1,3}(?:[,\s]\d{2,3})*(?:\.\d{1,2})?(?!\d)|(?:(?:[A-Z]{3}|Rs\.?|[₹$€£¥])\s?)?-?\d+(?:[.,]\d{1,2})?`,
   number: String.raw`-?\d+(?:[.,]\d+)?`,
@@ -24,7 +26,7 @@ export const VALUE_PATTERNS = {
 };
 
 const FIELD_LIBRARY = {
-  invoiceNumber: { type: 'id', labels: ['invoice number', 'invoice no', 'invoice #', 'inv no', 'inv #', 'bill number', 'bill no', 'invoice'] },
+  invoiceNumber: { type: 'id', labels: ['invoice number', 'invoice no', 'invoice #', 'invoice id', 'invoice ref', 'inv no', 'inv #', 'inv number', 'bill number', 'bill no', 'bill #', 'invoice'] },
   invoiceDate: { type: 'date', labels: ['invoice date', 'date of issue', 'issue date', 'bill date', 'dated', 'date'] },
   dueDate: { type: 'date', labels: ['due date', 'payment due', 'due by', 'pay by'] },
   poNumber: { type: 'id', labels: ['purchase order number', 'purchase order', 'po number', 'po no', 'p.o. no', 'p.o.', 'order number', 'order no'] },
@@ -147,7 +149,7 @@ function normalize(type, raw, options) {
   if (type === 'date') { const value = parseDate(text, options.dateOrder); return { value: value || text, valid: Boolean(value) }; }
   if (type === 'email') return { value: text.toLowerCase(), valid: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text) };
   if (type === 'gstin') return { value: text.toUpperCase(), valid: new RegExp(`^${VALUE_PATTERNS.gstin}$`).test(text.toUpperCase()) };
-  if (type === 'id') return { value: text.replace(/[.,;:]+$/, ''), valid: /\d/.test(text) };
+  if (type === 'id') return { value: text.replace(/[.,;:]+$/, '').replace(/\s*([\-–/])\s*/g, '$1').replace(/\s+/g, ' '), valid: /\d/.test(text) };
   return { value: text.replace(/\s{2,}/g, ' '), valid: text.length > 0 };
 }
 
@@ -179,6 +181,14 @@ function detectCurrency(text) {
   return null;
 }
 
+// A spaced word before the id must look like a code prefix (upper case, not a label word such as DATE).
+const NOT_PREFIX = new Set(['DATE', 'NO', 'NUMBER', 'DUE', 'TOTAL', 'AMOUNT', 'REF', 'ID']);
+function idPrefixOk(raw) {
+  const prefix = /^([A-Za-z]{1,6})[ \t]*(?:[\-–/][ \t]*|[ \t])\S/.exec(String(raw));
+  if (!prefix || /^[A-Za-z]{1,6}[\-/]/.test(raw)) return true;
+  return prefix[1] === prefix[1].toUpperCase() && !NOT_PREFIX.has(prefix[1]);
+}
+
 function findField(text, field, options) {
   const type = field.type || 'string';
   if (type === 'currency') {
@@ -199,9 +209,10 @@ function findField(text, field, options) {
   labels.forEach((label, position) => {
     const separator = type === 'amount'
       ? String.raw`\s*(?:@?\s*\(?\d{1,2}(?:\.\d{1,2})?\s?%\)?)?\s*[:#\-–]?\s*`
-      : String.raw`\s*(?:no\.?|number|#)?\s*[:#\-–]?\s*`;
+      : String.raw`\.?\s*(?:no\.?|number|#)?\s*[:#\-–]?\s*`;
     const regex = new RegExp(`${labelRegex(label)}${type === 'string' ? String.raw`[ \t]*[:\-–][ \t]*` : separator}(${valuePattern})`, 'gim');
     for (const match of text.matchAll(regex)) {
+      if (type === 'id' && !idPrefixOk(match[1])) continue;
       // Earlier labels are more specific; a bare one-word label such as "total" or "tax" scores lowest.
       const generic = !/\s/.test(label) && labels.length > 1 && position === labels.length - 1;
       candidates.push({ raw: match[1], score: generic ? 0.8 : 0.95 - Math.min(position, 5) * 0.02, label, index: match.index });
@@ -234,7 +245,8 @@ function findField(text, field, options) {
  * A custom field: { name, type, labels | label | pattern, required, pick: 'first'|'last' }.
  */
 export function extractFields(text, options = {}) {
-  const source = String(text || '').slice(0, 200000);
+  // PDF text layers can carry control characters for glyphs they could not map (e.g. a dash).
+  const source = String(text || '').slice(0, 200000).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ');
   const documentType = options.documentType || (options.fields?.length ? 'custom' : 'invoice');
   if (documentType !== 'custom' && !TEMPLATES[documentType]) throw new AppError(400, 'VALIDATION', `Unknown documentType ${documentType}`);
   const minConfidence = Number.isFinite(Number(options.minConfidence)) ? Number(options.minConfidence) : 0.8;

@@ -1,3 +1,4 @@
+import { Icon } from './brand.jsx';
 const LABELS = {
   QUEUED: 'Queued', CLAIMED: 'Claimed', RUNNING: 'Running', SUCCEEDED: 'Succeeded', FAILED: 'Failed',
   RETRY_WAIT: 'Retry wait', CANCEL_REQUESTED: 'Cancel requested', CANCELLED: 'Cancelled', SKIPPED: 'Skipped',
@@ -32,11 +33,19 @@ export function ErrorText({ children }) {
   return <p className="rounded-lg border border-danger/20 bg-[#FEF3F2] px-3 py-2 text-sm text-danger" role="alert">{children}</p>;
 }
 
-export function Modal({ title, children, onClose }) {
+export function Modal({ title, subtitle, icon, children, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/50 p-4" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/50 p-4" role="dialog" aria-modal="true" aria-label={title}>
       <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl bg-white p-5 shadow-lift">
-        <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-semibold">{title}</h2><button type="button" onClick={onClose} className="text-muted">Close</button></div>
+        {icon ? (
+          <div className="mb-4 flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#FFF1EA] text-[#E03A0E]"><Icon name={icon} className="h-5 w-5" /></span>
+            <div className="min-w-0 flex-1"><h2 className="text-[17px] font-semibold leading-6 text-[#1F2933]">{title}</h2>{subtitle && <p className="truncate text-[13px] text-[#6B7280]" title={subtitle}>{subtitle}</p>}</div>
+            <button type="button" onClick={onClose} aria-label="Close" title="Close" className="grid h-8 w-8 place-items-center rounded-lg text-[#6B7280] hover:bg-[#F5F2EE] hover:text-[#1F2933]"><Icon name="close" className="h-4 w-4" /></button>
+          </div>
+        ) : (
+          <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-semibold">{title}</h2><button type="button" onClick={onClose} className="text-muted">Close</button></div>
+        )}
         {children}
       </div>
     </div>

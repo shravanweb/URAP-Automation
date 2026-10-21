@@ -361,7 +361,10 @@ export function createApp(options = {}) {
       [sha256(token.data.refreshToken)],
     );
     if (!rows[0]) throw new AppError(401, 'UNAUTHORIZED', 'Refresh token is invalid');
-    await pool.query(`UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(3) WHERE id = ?`, [rows[0].token_id]);
+    // Atomic rotation: of two refreshes racing with the same token only one wins, so a token never
+    // forks into two live sessions. The loser gets 401 and the client reuses the winner's tokens.
+    const [revoked] = await pool.query(`UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(3) WHERE id = ? AND revoked_at IS NULL`, [rows[0].token_id]);
+    if (!revoked.affectedRows) throw new AppError(401, 'UNAUTHORIZED', 'Refresh token is invalid');
     res.json({ data: { accessToken: signAccess(rows[0]), refreshToken: await issueRefresh(rows[0]), user: presentUser(rows[0]) } });
   }));
 
@@ -1532,6 +1535,7 @@ export function createApp(options = {}) {
     const body = z.object({
       outcome: z.string().max(40).optional(),
       data: z.record(z.any()).optional().default({}),
+      values: z.record(z.union([z.string().max(500), z.number(), z.boolean(), z.null()])).optional(),
       comment: z.string().max(2000).optional(),
     }).safeParse(req.body || {});
     if (!body.success) throw validationError(body.error.issues);

@@ -32,13 +32,65 @@ function FormField({ field, value, onChange, disabled }) {
   return <div>{label}<input id={id} type={type} className={`${inputClass} mt-1`} disabled={disabled} value={value ?? ''} onChange={(event) => onChange(event.target.value)} /></div>;
 }
 
+const humanize = (key) => String(key).replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').replace(/^./, (c) => c.toUpperCase()).replace(/\b(Po|Gstin|Id)\b/g, (w) => w.toUpperCase());
+const asText = (value) => (value === null || value === undefined ? '' : String(value));
+
+/** Validation tasks: the scalar data fields the reviewer can correct before approving. */
+export function reviewableKeys(task) {
+  if (task.type !== 'validation' || !task.data || typeof task.data !== 'object') return [];
+  return Object.keys(task.data).filter((key) => task.data[key] === null || typeof task.data[key] !== 'object');
+}
+
+/** Only the fields the reviewer changed, as { key: text }. */
+export function changedValues(task, edits) {
+  const out = {};
+  for (const key of reviewableKeys(task)) if (key in edits && edits[key] !== asText(task.data[key])) out[key] = edits[key];
+  return out;
+}
+
+function ReviewFields({ task, edits, setEdits, editable }) {
+  const keys = reviewableKeys(task);
+  const shown = editable ? null : (task.result?.values || task.data);
+  return (
+    <div className="rounded-xl border border-[#E6E1DA] bg-white">
+      <div className="flex items-center justify-between border-b border-[#EFE9E2] px-4 py-2.5">
+        <p className="text-[13px] font-semibold text-[#1F2933]">Extracted fields</p>
+        <p className="text-xs text-[#6B7280]">{editable ? 'Correct or fill in values before approving.' : task.result?.values ? 'Values as approved by the reviewer.' : 'Values sent for review.'}</p>
+      </div>
+      <div className="grid gap-x-4 gap-y-3 p-4 sm:grid-cols-2">
+        {keys.map((key) => {
+          const original = asText(task.data[key]);
+          const value = editable ? (edits[key] ?? original) : asText(shown?.[key]);
+          const edited = editable && value !== original;
+          const missing = !value;
+          const id = `review-${key}`;
+          return (
+            <div key={key}>
+              <label htmlFor={id} className="mb-1 flex items-center gap-2 text-xs font-medium text-[#4A5568]">
+                {humanize(key)}
+                {edited && <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#E03A0E]"><span className="h-1.5 w-1.5 rounded-full bg-[#FA4616]" />Edited</span>}
+                {!edited && missing && <span className="rounded-full border border-[#EFD9B8] bg-[#FDF6EC] px-1.5 text-[10.5px] font-medium text-[#A35F0B]">Not found</span>}
+              </label>
+              <input id={id} className={`${inputClass} ${edited ? 'border-[#F6B59B] bg-[#FFFAF7]' : ''} ${missing && !edited ? 'border-dashed' : ''} disabled:bg-[#FBFAF8] disabled:text-[#4A5568]`}
+                disabled={!editable} value={value} placeholder={editable ? 'Not found, enter a value' : '—'}
+                onChange={(event) => setEdits({ ...edits, [key]: event.target.value })} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function TaskDetail({ task, onDone }) {
   const user = currentUser();
   const [values, setValues] = useState(() => initialValues(task));
+  const [edits, setEdits] = useState({});
   const [comment, setComment] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setValues(initialValues(task)); setComment(''); setError(''); }, [task.id]);
+  useEffect(() => { setValues(initialValues(task)); setEdits({}); setComment(''); setError(''); }, [task.id]);
+  const reviewable = reviewableKeys(task).length > 0;
   const outcomes = task.outcomes?.length ? task.outcomes : ['submit'];
   const open = task.status === 'pending';
 
@@ -60,7 +112,8 @@ function TaskDetail({ task, onDone }) {
       <p className="text-xs text-muted">{task.type} task · {task.projectName || task.projectId} · {task.workflowName || 'workflow'} · step <span className="font-mono">{task.stepKey}</span>{task.jobId && <> · job <Link className="text-emberdark" to={`/jobs/${task.jobId}`}>{task.jobId.slice(0, 8)}</Link></>}</p>
       <p className="text-xs text-muted">Created {task.createdAt}{task.dueAt ? ` · due ${task.dueAt}` : ''} (UTC) · {task.assignedUserEmail ? `assigned to ${task.assignedUserEmail}` : task.assignedRole ? `for role ${task.assignedRole.replaceAll('_', ' ')}` : 'unassigned'}</p>
       {task.description && <p className="whitespace-pre-wrap text-sm">{task.description}</p>}
-      {task.data && Object.keys(task.data).length > 0 && (
+      {reviewable && <ReviewFields task={task} edits={edits} setEdits={setEdits} editable={open && task.canComplete} />}
+      {!reviewable && task.data && Object.keys(task.data).length > 0 && (
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded bg-mist p-3 text-sm">
           {Object.entries(task.data).map(([key, value]) => <Fragment key={key}><dt className="font-medium">{key}</dt><dd className="break-all">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd></Fragment>)}
         </dl>
@@ -74,7 +127,7 @@ function TaskDetail({ task, onDone }) {
           <label className="block text-xs font-medium">Comment{task.requireCommentOnReject ? ' (required to reject)' : ''}<textarea className={`${inputClass} mt-1`} rows="2" value={comment} onChange={(event) => setComment(event.target.value)} /></label>
           <div className="flex flex-wrap gap-2">
             {task.canComplete && outcomes.map((outcome) => (
-              <button key={outcome} type="button" disabled={busy} className={outcome === 'reject' ? quietClass : buttonClass} onClick={() => act(`/api/tasks/${task.id}/complete`, { outcome, data: values, comment: comment || undefined })}>{OUTCOME_LABEL[outcome] || outcome}</button>
+              <button key={outcome} type="button" disabled={busy} className={outcome === 'reject' ? quietClass : buttonClass} onClick={() => act(`/api/tasks/${task.id}/complete`, { outcome, data: values, ...(reviewable ? { values: changedValues(task, edits) } : {}), comment: comment || undefined })}>{OUTCOME_LABEL[outcome] || outcome}</button>
             ))}
             {task.assignedUserId !== user?.id && user?.role !== 'viewer' && <button type="button" disabled={busy} className={quietClass} onClick={() => act(`/api/tasks/${task.id}/assign`, {})}>Assign to me</button>}
             {task.assignedUserId === user?.id && <button type="button" disabled={busy} className={quietClass} onClick={() => act(`/api/tasks/${task.id}/assign`, { userId: null })}>Release</button>}

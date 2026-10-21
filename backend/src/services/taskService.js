@@ -162,7 +162,27 @@ export async function getTaskForJob(pool, job, taskId) {
 
 export function taskResult(row) {
   const task = presentTask(row);
-  return { taskId: task.id, status: task.status, outcome: task.outcome, data: task.result?.data ?? null, comment: task.comment, completedBy: task.completedByEmail || task.completedBy, completedAt: task.completedAt };
+  return { taskId: task.id, status: task.status, outcome: task.outcome, data: task.result?.data ?? null, ...(task.result?.values ? { values: task.result.values } : {}), comment: task.comment, completedBy: task.completedByEmail || task.completedBy, completedAt: task.completedAt };
+}
+
+/**
+ * Reviewer corrections on a validation task: only keys of the task's data, scalar values, trimmed.
+ * Empty strings become null. Returns the full reviewed values (data with corrections) or null.
+ */
+export function reviewedValues(row, input) {
+  if (row.task_type !== 'validation' || !input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const original = (typeof row.data_json === 'string' ? JSON.parse(row.data_json) : row.data_json) || {};
+  if (typeof original !== 'object' || Array.isArray(original)) return null;
+  const values = { ...original };
+  for (const [key, raw] of Object.entries(input)) {
+    if (!Object.prototype.hasOwnProperty.call(original, key)) throw new AppError(400, 'VALIDATION', `Unknown field ${key}`);
+    if (raw !== null && !['string', 'number', 'boolean'].includes(typeof raw)) throw new AppError(400, 'VALIDATION', `Field ${key} must be a text, number, or empty`);
+    const text = raw === null ? '' : String(raw).trim().slice(0, 500);
+    if (text === '') values[key] = null;
+    else if (typeof original[key] === 'number' && Number.isFinite(Number(text.replace(/,/g, '')))) values[key] = Number(text.replace(/,/g, ''));
+    else values[key] = typeof raw === 'string' ? text : raw;
+  }
+  return values;
 }
 
 function schemaOf(row) {
@@ -191,10 +211,11 @@ export async function completeTask(pool, user, taskId, body = {}) {
     if (outcomes.length && !outcomes.includes(outcome)) throw new AppError(400, 'VALIDATION', `outcome must be one of ${outcomes.join(', ')}`);
     const data = validateFormData(fields, body.data || {});
     const comment = body.comment ? String(body.comment).slice(0, 2000) : null;
+    const values = reviewedValues(row, body.values);
     if (outcome === 'reject' && schemaOf(row).requireCommentOnReject && !comment) throw new AppError(400, 'VALIDATION', 'A comment is required to reject');
     await connection.query(
       `UPDATE action_tasks SET status = 'completed', outcome = ?, result_json = ?, comment = ?, completed_by = ?, completed_at = UTC_TIMESTAMP(3), updated_at = UTC_TIMESTAMP(3) WHERE id = ?`,
-      [outcome || null, JSON.stringify({ data }), comment, user.id, row.id],
+      [outcome || null, JSON.stringify(values ? { data, values } : { data }), comment, user.id, row.id],
     );
     let resumedJobId = null;
     if (row.job_id) {
@@ -202,7 +223,7 @@ export async function completeTask(pool, user, taskId, body = {}) {
       const job = jobs[0];
       const state = typeof job?.resume_state_json === 'string' ? JSON.parse(job.resume_state_json) : job?.resume_state_json;
       if (job && job.status === 'SUSPENDED' && state?.taskId === row.id) {
-        const output = { taskId: row.id, status: 'completed', outcome: outcome || null, data, comment, completedBy: user.email, completedAt: new Date().toISOString() };
+        const output = { taskId: row.id, status: 'completed', outcome: outcome || null, data, ...(values ? { values } : {}), comment, completedBy: user.email, completedAt: new Date().toISOString() };
         await connection.query(
           `UPDATE automation_jobs SET status = 'QUEUED', resume_state_json = ?, available_at = UTC_TIMESTAMP(3), updated_at = UTC_TIMESTAMP(3) WHERE id = ? AND status = 'SUSPENDED'`,
           [JSON.stringify({ ...state, output }), job.id],
