@@ -19,6 +19,7 @@
 //         ROBOT_FAIL_TASKS  comma-separated task names to report as FAILED (for demos)
 //         ROBOT_WORK_DIR    folder for files produced by steps (default ROBOT_ROOT/work)
 //         BROWSER_*, DESKTOP_*, OCR_*  same meaning as for the worker (see .env.example)
+import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -163,7 +164,7 @@ async function main() {
   process.on('SIGTERM', () => { running = false; });
   do {
     try {
-      if (token) await robotApi('POST', '/api/robot/heartbeat');
+      if (token) await robotApi('POST', '/api/robot/heartbeat', { machine: os.hostname().slice(0, 100), version: 'urap-robot-1.0' });
       await processInboxOnce();
     } catch (error) {
       console.error(JSON.stringify({ message: error.message, code: error.code || 'ROBOT' }));

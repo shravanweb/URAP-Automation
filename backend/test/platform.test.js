@@ -97,7 +97,7 @@ afterAll(async () => {
 describe('database migrations', () => {
   it('records the baseline and incremental migrations once', async () => {
     const [rows] = await pool.query(`SELECT id FROM schema_migrations ORDER BY id`);
-    expect(rows.map((row) => row.id)).toEqual(['001_init', '002_work_queues', '003_action_center', '004_flows', '005_agents', '006_apps', '007_cases', '008_bpmn']);
+    expect(rows.map((row) => row.id)).toEqual(['001_init', '002_work_queues', '003_action_center', '004_flows', '005_agents', '006_apps', '007_cases', '008_bpmn', '009_audit_details']);
     const again = await migrate(cfg);
     expect(again.applied).toEqual([]);
   });
@@ -113,7 +113,7 @@ describe('database migrations', () => {
     await admin2.query(`INSERT INTO schema_migrations (id, applied_at) VALUES ('001_init', UTC_TIMESTAMP(3))`);
     try {
       const result = await migrate({ ...cfg, databaseUrl: url.toString() });
-      expect(result.applied).toEqual(['002_work_queues', '003_action_center', '004_flows', '005_agents', '006_apps', '007_cases', '008_bpmn']);
+      expect(result.applied).toEqual(['002_work_queues', '003_action_center', '004_flows', '005_agents', '006_apps', '007_cases', '008_bpmn', '009_audit_details']);
       const [tables] = await admin2.query(`SHOW TABLES LIKE 'queue_items'`);
       expect(tables).toHaveLength(1);
       const [taskTables] = await admin2.query(`SHOW TABLES LIKE 'action_tasks'`);

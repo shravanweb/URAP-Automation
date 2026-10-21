@@ -4,6 +4,9 @@ import { Icon } from '../components/brand.jsx';
 import { api, currentUser, download } from '../services/api.js';
 import { EmptyState, ErrorText, Modal, StatusBadge, buttonClass, inputClass, quietClass } from '../components/ui.jsx';
 import { SkeletonRows } from '../components/Loader.jsx';
+import AuditLog from '../components/AuditLog.jsx';
+import ReportsDashboard from '../components/ReportsDashboard.jsx';
+import SettingsTabs from '../components/SettingsTabs.jsx';
 
 const ACTIVE = ['QUEUED', 'CLAIMED', 'RUNNING', 'RETRY_WAIT', 'CANCEL_REQUESTED', 'SUSPENDED'];
 const JOB_STATUSES = ['QUEUED', 'CLAIMED', 'RUNNING', 'SUSPENDED', 'SUCCEEDED', 'FAILED', 'RETRY_WAIT', 'CANCEL_REQUESTED', 'CANCELLED', 'SKIPPED'];
@@ -431,160 +434,15 @@ function Schedules() {
 }
 
 function Reports() {
-  const [rows, setRows] = useState(null);
-  const [projects, setProjects] = useState([]);
-  const [filters, setFilters] = useState({ projectId: '', status: '' });
-  const query = () => { const params = new URLSearchParams(); for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value); return params.toString(); };
-  const [error, setError, reload] = useLoader(async () => {
-    setProjects((await api('/api/projects?limit=100')).data);
-    setRows((await api(`/api/reports/executions?${query()}`)).data);
-  }, []);
-  const counts = (rows || []).reduce((acc, row) => ({ ...acc, [row.status]: (acc[row.status] || 0) + 1 }), {});
-  return (
-    <>
-      <ErrorText>{error}</ErrorText>
-      <form className="grid gap-2 md:grid-cols-5" onSubmit={(event) => { event.preventDefault(); reload(); }}>
-        <select className={inputClass} value={filters.projectId} onChange={(event) => setFilters({ ...filters, projectId: event.target.value })}><option value="">All projects</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-        <select className={inputClass} value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Any status</option>{JOB_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</select>
-        <button className={buttonClass} type="submit">Apply</button>
-        <button className={quietClass} type="button" onClick={() => download(`/api/reports/export.csv?${query()}`, 'executions.csv').catch((err) => setError(err.message))}>Download CSV</button>
-        <button className={quietClass} type="button" onClick={() => download(`/api/reports/export.xlsx?${query()}`, 'executions.xlsx').catch((err) => setError(err.message))}>Download Excel</button>
-      </form>
-      {rows && <p className="text-sm text-muted">{Object.entries(counts).map(([status, count]) => `${status}: ${count}`).join(' · ') || 'No rows'}</p>}
-      {!rows ? <p className="text-sm text-muted">Loading…</p> : rows.length === 0 ? <EmptyState title="No executions" body="Reports list jobs that have actually been queued or completed." /> : (
-        <div className="overflow-auto rounded-lg border border-line bg-white"><table className="min-w-full text-sm"><thead className="bg-cream2 text-muted"><tr><th className="px-3 py-2 text-left">Job</th><th className="px-3 py-2 text-left">Project</th><th className="px-3 py-2 text-left">Workflow</th><th className="px-3 py-2 text-left">Version</th><th className="px-3 py-2 text-left">Trigger</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">Finished</th></tr></thead>
-          <tbody>{rows.map((row) => <tr key={row.id} className="border-t border-line"><td className="px-3 py-2"><Link className="font-mono text-emberdark" to={`/jobs/${row.id}`}>{row.id.slice(0, 8)}</Link></td><td className="px-3 py-2">{row.project_name}</td><td className="px-3 py-2">{row.workflow_name}</td><td className="px-3 py-2">{row.version_number}</td><td className="px-3 py-2">{row.trigger_source}</td><td className="px-3 py-2"><StatusBadge status={row.status} /></td><td className="px-3 py-2">{row.finished_at || '—'}</td></tr>)}</tbody></table></div>
-      )}
-    </>
-  );
+  return <ReportsDashboard />;
 }
 
 function Audit() {
-  const [data, setData] = useState(null);
-  const [action, setAction] = useState('');
-  const [offset, setOffset] = useState(0);
-  const [error, , reload] = useLoader(async () => {
-    const params = new URLSearchParams({ limit: '50', offset: String(offset) });
-    if (action) params.set('action', action);
-    setData(await api(`/api/audit?${params.toString()}`));
-  }, [offset]);
-  return (
-    <>
-      <ErrorText>{error}</ErrorText>
-      <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); if (offset) setOffset(0); else reload(); }}>
-        <input className={inputClass} placeholder="Filter action, e.g. job. or workflow.publish" value={action} onChange={(event) => setAction(event.target.value)} />
-        <button className={buttonClass} type="submit">Apply</button>
-      </form>
-      {!data ? <SkeletonRows rows={6} cols={5} /> : data.data.length === 0 ? <EmptyState title="No audit events" body="Sign-in, project changes, publishes, and job actions are recorded." /> : (
-        <>
-          <ul className="divide-y divide-line rounded-lg border border-line bg-white">{data.data.map((row) => <li key={row.id} className="px-3 py-2 text-sm">{row.created_at} · <span className="font-medium">{row.action}</span> · {row.entity_type} {row.entity_id ? row.entity_id.slice(0, 8) : ''} · {row.actor_email || (row.actor_robot_name ? `robot ${row.actor_robot_name}` : 'system')}</li>)}</ul>
-          <div className="flex items-center gap-2 text-sm"><button className={quietClass} type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous</button><span>{offset + 1}–{Math.min(offset + 50, data.meta.total)} of {data.meta.total}</span><button className={quietClass} type="button" disabled={offset + 50 >= data.meta.total} onClick={() => setOffset(offset + 50)}>Next</button></div>
-        </>
-      )}
-    </>
-  );
-}
-
-// Random temporary password for an administrator reset: 16 characters from an unambiguous
-// alphabet plus a digit, so it always meets the 12-character letters-and-numbers rule.
-function temporaryPassword() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const bytes = new Uint8Array(16);
-  globalThis.crypto.getRandomValues(bytes);
-  const body = Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('');
-  return `${body.slice(0, 4)}-${body.slice(4, 8)}-${body.slice(8, 12)}-${body.slice(12)}7`;
+  return <AuditLog />;
 }
 
 function Settings() {
-  const user = currentUser();
-  const isAdmin = user?.role === 'administrator';
-  const [data, setData] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [robots, setRobots] = useState([]);
-  const [newUser, setNewUser] = useState({ role: 'operator' });
-  const [robotForm, setRobotForm] = useState({ adapter: 'local_file_handoff', projectIds: [] });
-  const [token, setToken] = useState(null);
-  const [resetInfo, setResetInfo] = useState(null);
-  const [message, setMessage] = useState('');
-  const [error, setError, reload] = useLoader(async () => {
-    setData(await api('/api/settings'));
-    if (isAdmin) {
-      const [userResult, projectResult, robotResult] = await Promise.all([api('/api/users'), api('/api/projects?limit=100&status=active'), api('/api/robots')]);
-      setUsers(userResult.data);
-      setProjects(projectResult.data);
-      setRobots(robotResult.data);
-    }
-  }, []);
-  async function act(work, done) {
-    try { await work(); setError(''); setMessage(done); await reload(); } catch (err) { setError(err.message); }
-  }
-  if (!data) return <><ErrorText>{error}</ErrorText>{!error && <SkeletonRows rows={5} cols={4} />}</>;
-  return (
-    <div className="space-y-4">
-      <ErrorText>{error}</ErrorText>
-      {message && <p className="text-sm text-success">{message}</p>}
-      <div className="space-y-2 rounded-lg border border-line bg-white p-4 text-sm">
-        <h2 className="font-semibold">Tenant and orchestration</h2>
-        <p>Tenant: {data.data.tenant.name}. Isolation is {data.data.tenant.isolation_enabled ? 'enabled' : 'disabled'}.</p>
-        <p>UiPath Orchestrator is {data.data.orchestratorConfigured ? 'configured in the environment' : 'not configured. Robot work uses the local file handoff and the robot API until a real Orchestrator token and release key are set.'}</p>
-      </div>
-      <div className="space-y-2 rounded-lg border border-line bg-white p-4 text-sm">
-        <h2 className="font-semibold">Robots</h2>
-        {data.data.robots.length === 0 ? <EmptyState title="No robots registered" body="A robot is available only after it authenticates and sends a heartbeat. Registration does not mean it is connected." /> : (
-          <ul className="divide-y divide-line">{(isAdmin ? robots : data.data.robots).map((robot) => (
-            <li key={robot.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-              <span><span className="font-medium">{robot.name}</span> · {robot.adapter} · <StatusBadge status={robot.reportedAvailable ? 'available' : 'unknown'} /> {robot.reportedAvailable ? 'heartbeat in the last minute' : `no recent heartbeat${robot.lastHeartbeatAt ? ` (last ${robot.lastHeartbeatAt} UTC)` : ''}`}{robot.projectIds && <span className="block text-xs text-muted">projects: {robot.projectIds.map((id) => projects.find((project) => project.id === id)?.name || id.slice(0, 8)).join(', ')}</span>}</span>
-              {isAdmin && <button className={quietClass} type="button" onClick={() => act(async () => { const result = await api(`/api/robots/${robot.id}/rotate-token`, { method: 'POST' }); setToken({ name: robot.name, token: result.data.token }); }, 'Token rotated')}>Rotate token</button>}
-            </li>
-          ))}</ul>
-        )}
-        {isAdmin && (
-          <form className="grid gap-2 md:grid-cols-4" onSubmit={(event) => { event.preventDefault(); act(async () => { const result = await api('/api/robots', { method: 'POST', body: robotForm }); setToken({ name: robotForm.name, token: result.data.token }); }, 'Robot registered'); }}>
-            <input className={inputClass} placeholder="Robot name" value={robotForm.name || ''} onChange={(event) => setRobotForm({ ...robotForm, name: event.target.value })} />
-            <select className={inputClass} value={robotForm.adapter} onChange={(event) => setRobotForm({ ...robotForm, adapter: event.target.value })}><option value="local_file_handoff">UiPath file handoff</option><option value="orchestrator">UiPath Orchestrator</option><option value="contract_simulator">Contract robot (npm run robot-simulator)</option></select>
-            <select multiple className={`${inputClass} h-20`} value={robotForm.projectIds} onChange={(event) => setRobotForm({ ...robotForm, projectIds: [...event.target.selectedOptions].map((option) => option.value) })}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-            <button className={buttonClass} type="submit">Register robot</button>
-          </form>
-        )}
-      </div>
-      {isAdmin && (
-        <div className="space-y-2 rounded-lg border border-line bg-white p-4 text-sm">
-          <h2 className="font-semibold">Users</h2>
-          <ul className="divide-y divide-line">{users.map((item) => (
-            <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-              <span><span className="font-medium">{item.displayName}</span> · {item.email} · <StatusBadge status={item.status === 'active' ? 'active' : 'disabled'} /></span>
-              <span className="flex gap-1">
-                <select className={inputClass} value={item.role} disabled={item.id === user.id} onChange={(event) => act(() => api(`/api/users/${item.id}`, { method: 'PATCH', body: { role: event.target.value } }), 'Role updated')}>{['administrator', 'project_manager', 'automation_developer', 'operator', 'viewer'].map((role) => <option key={role} value={role}>{role.replaceAll('_', ' ')}</option>)}</select>
-                {item.id !== user.id && <button className={quietClass} type="button" onClick={() => act(() => api(`/api/users/${item.id}`, { method: 'PATCH', body: { status: item.status === 'active' ? 'disabled' : 'active' } }), 'User updated')}>{item.status === 'active' ? 'Disable' : 'Enable'}</button>}
-                {item.id !== user.id && <button className={`${quietClass} whitespace-nowrap`} type="button" onClick={() => { const password = temporaryPassword(); act(async () => { await api(`/api/users/${item.id}`, { method: 'PATCH', body: { password } }); setResetInfo({ email: item.email, password }); }, 'Password reset'); }}>Reset password</button>}
-              </span>
-            </li>
-          ))}</ul>
-          <form className="grid gap-2 md:grid-cols-5" onSubmit={(event) => { event.preventDefault(); act(async () => { await api('/api/users', { method: 'POST', body: newUser }); setNewUser({ role: 'operator' }); }, 'User created'); }}>
-            <input className={inputClass} placeholder="Email" value={newUser.email || ''} onChange={(event) => setNewUser({ ...newUser, email: event.target.value })} />
-            <input className={inputClass} placeholder="Display name" value={newUser.displayName || ''} onChange={(event) => setNewUser({ ...newUser, displayName: event.target.value })} />
-            <input className={inputClass} placeholder="Temporary password, 12+ characters" type="password" value={newUser.password || ''} onChange={(event) => setNewUser({ ...newUser, password: event.target.value })} />
-            <select className={inputClass} value={newUser.role} onChange={(event) => setNewUser({ ...newUser, role: event.target.value })}><option value="project_manager">Project manager</option><option value="automation_developer">Automation developer</option><option value="operator">Operator</option><option value="viewer">Viewer</option><option value="administrator">Administrator</option></select>
-            <button className={buttonClass} type="submit">Create user</button>
-          </form>
-        </div>
-      )}
-      {resetInfo && (
-        <Modal title={`Temporary password · ${resetInfo.email}`} onClose={() => setResetInfo(null)}>
-          <p className="text-sm">Share this password with the user over a trusted channel. It is not shown again. Their existing sessions were signed out.</p>
-          <pre className="mt-2 select-all break-all rounded bg-mist p-2 font-mono text-sm">{resetInfo.password}</pre>
-        </Modal>
-      )}
-      {token && (
-        <Modal title={`Robot token · ${token.name}`} onClose={() => setToken(null)}>
-          <p className="text-sm">Copy this token now. It is stored only as a hash and will not be shown again.</p>
-          <pre className="mt-2 select-all break-all rounded bg-mist p-2 font-mono text-xs">{token.token}</pre>
-          <p className="mt-2 text-xs text-muted">Contract robot: set ROBOT_TOKEN to this value and run npm run robot-simulator in backend.</p>
-        </Modal>
-      )}
-    </div>
-  );
+  return <SettingsTabs />;
 }
 
 export default function OperationsPage({ section }) {

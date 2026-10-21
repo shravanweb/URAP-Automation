@@ -139,3 +139,8 @@
 .hub-glow { animation: hub-glow 5s ease-in-out infinite; }
 .hub-target { animation: hub-target 2.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .usecase-link, .usecase-dot, .hub-float, .hub-glow, .hub-target { animation: none; } }
+
+/* ---- Audit drawer ---- */
+@keyframes audit-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.audit-drawer { animation: audit-drawer-in 0.22s ease-out; }
+@media (prefers-reduced-motion: reduce) { .audit-drawer { animation: none; } }

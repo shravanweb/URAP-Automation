@@ -36,6 +36,9 @@ import { registerAgentRoutes } from './agentRoutes.js';
 import { registerAppRoutes } from './appRoutes.js';
 import { registerCaseRoutes } from './caseRoutes.js';
 import { registerBpmnRoutes } from './bpmnRoutes.js';
+import { registerAuditRoutes } from './auditRoutes.js';
+import { registerInsightsRoutes } from './insightsRoutes.js';
+import { requestContextMiddleware } from '../lib/requestContext.js';
 import { kickAgentRun } from '../agent/runtime.js';
 import { PROVIDERS } from '../agent/providers.js';
 import { advanceRun } from '../flow/engine.js';
@@ -154,6 +157,7 @@ export function createApp(options = {}) {
     crossOriginResourcePolicy: { policy: 'same-site' },
   }));
   app.use(cors(corsOptions(cfg.corsOrigin)));
+  app.use(requestContextMiddleware);
   app.use(express.json({ limit: cfg.jsonBodyLimit || '1mb' }));
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -306,6 +310,8 @@ export function createApp(options = {}) {
     const user = rows[0];
     const valid = await verifyPassword(body.data.password, user ? user.password_hash : await dummyHash);
     if (!user || !valid || user.status !== 'active') {
+      // Only known accounts can be attributed to a tenant; the typed password is never recorded.
+      if (user) await writeAudit(pool, { tenantId: user.tenant_id, userId: user.id, action: 'auth.login_failed', entityType: 'user', entityId: user.id, result: 'failure', metadata: { reason: !valid ? 'bad_password' : 'inactive' } }).catch(() => {});
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     }
     if (needsRehash(user.password_hash, cfg.bcryptRounds)) {
@@ -1055,6 +1061,7 @@ export function createApp(options = {}) {
     if (req.query.projectId) { where.push('j.project_id = ?'); params.push(String(req.query.projectId)); }
     if (req.query.workflowId) { where.push('j.workflow_id = ?'); params.push(String(req.query.workflowId)); }
     if (req.query.status) { where.push('j.status = ?'); params.push(String(req.query.status)); }
+    if (req.query.trigger) { where.push('j.trigger_source = ?'); params.push(String(req.query.trigger)); }
     if (req.query.from) { where.push('j.created_at >= ?'); params.push(parsedDate(req.query.from, 'from')); }
     if (req.query.to) { where.push('j.created_at <= ?'); params.push(parsedDate(req.query.to, 'to')); }
     const [rows] = await pool.query(
@@ -1095,26 +1102,15 @@ export function createApp(options = {}) {
     res.end();
   }));
 
-  app.get('/api/audit', requireUser, wrap(async (req, res) => {
-    const { limit, offset } = paging(req.query);
-    const range = await scope(req.user);
-    const visible = auditScope(range, req.user);
-    const where = ['a.tenant_id = ?', visible.sql.replaceAll('project_id', 'a.project_id').replaceAll('actor_user_id', 'a.actor_user_id')];
-    const params = [req.user.tenant_id, ...visible.params];
-    if (req.query.action) { where.push('a.action LIKE ? ESCAPE \'\\\\\''); params.push(like(req.query.action)); }
-    if (req.query.projectId) { where.push('a.project_id = ?'); params.push(String(req.query.projectId)); }
-    const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM audit_logs a WHERE ${where.join(' AND ')}`, params);
-    const [rows] = await pool.query(
-      `SELECT a.id, a.actor_user_id, u.email AS actor_email, a.actor_robot_id, r.name AS actor_robot_name, a.action, a.entity_type,
-              a.entity_id, a.project_id, a.metadata_json, a.created_at
-       FROM audit_logs a
-       LEFT JOIN users u ON u.id = a.actor_user_id
-       LEFT JOIN automation_robots r ON r.id = a.actor_robot_id
-       WHERE ${where.join(' AND ')} ORDER BY a.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
-      params,
-    );
-    res.json({ data: rows, meta: { limit, offset, total: Number(countRows[0].total) } });
+  registerInsightsRoutes(app, { pool, cfg, wrap, paging, requireUser, scope, scopeSql });
+  app.patch('/api/settings/tenant', requireUser, requirePermission('users.manage'), wrap(async (req, res) => {
+    const body = z.object({ name: z.string().trim().min(2).max(200) }).safeParse(req.body);
+    if (!body.success) throw validationError(body.error.issues);
+    await pool.query(`UPDATE tenants SET name = ?, updated_at = UTC_TIMESTAMP(3) WHERE id = ?`, [body.data.name, req.user.tenant_id]);
+    await writeAudit(pool, { tenantId: req.user.tenant_id, userId: req.user.id, action: 'settings.tenant_updated', entityType: 'tenant', entityId: req.user.tenant_id, metadata: { name: body.data.name }, ip: req.ip });
+    res.json({ data: { name: body.data.name } });
   }));
+  registerAuditRoutes(app, { pool, wrap, paging, requireUser, scope, like, auditScope, csvCell });
 
   app.post('/api/projects/:id/files', requireUser, requirePermission('workflows.write'), upload.single('file'), wrap(async (req, res) => {
     const project = await loadProject(req.user, req.params.id, true);
@@ -1217,6 +1213,14 @@ export function createApp(options = {}) {
   }
 
   app.post('/api/robot/heartbeat', requireRobot, wrap(async (req, res) => {
+    // Optional self-description shown in Settings > Robots. Short plain strings only.
+    const info = z.object({ machine: z.string().trim().max(100).regex(/^[\w .@()-]*$/).optional(), version: z.string().trim().max(40).regex(/^[\w .+-]*$/).optional() }).safeParse(req.body || {});
+    if (info.success && (info.data.machine || info.data.version)) {
+      await pool.query(
+        `UPDATE automation_robots SET config_json = JSON_SET(COALESCE(config_json, JSON_OBJECT()), '$.machine', ?, '$.version', ?) WHERE id = ?`,
+        [info.data.machine || null, info.data.version || null, req.robot.id],
+      );
+    }
     await recordHeartbeat(pool, req.robot);
     res.json({ data: { status: 'available', robotId: req.robot.id } });
   }));
