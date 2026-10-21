@@ -6,6 +6,7 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { registerPublicAsk } from '../public/askAi.js';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import { z } from 'zod';
@@ -273,6 +274,8 @@ export function createApp(options = {}) {
       res.status(503).json({ error: { code: 'DATABASE_UNAVAILABLE', message: 'Database is unavailable' } });
     }
   }));
+
+  registerPublicAsk(app, { pool, cfg, chat: options.askChat });
 
   app.post('/api/auth/login', authLimit, wrap(async (req, res) => {
     const body = z.object({ email: z.string().email(), password: z.string().min(1) }).safeParse(req.body);

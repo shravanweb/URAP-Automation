@@ -9,9 +9,10 @@ import cube4 from '../assets/cubes/cube-4.png';
 import cube5 from '../assets/cubes/cube-5.png';
 import cube6 from '../assets/cubes/cube-6.png';
 import logoImage from '../assets/logo.png';
-import logoLightImage from '../assets/logo-light.png';
 import logoMarkImage from '../assets/logo-mark.png';
 import './landing-legacy.css';
+import AskAi from '../components/AskAi.jsx';
+import LandingFooter from '../components/LandingFooter.jsx';
 
 // Floating cubes cut out of the hero image; positions are percentages of the 1672x941 artwork.
 const heroCubes = [
@@ -229,19 +230,25 @@ function PathIllustration({ step, point }) {
             <stop offset="0.6" stopColor="#FF9A57" />
             <stop offset="1" stopColor="#F26B1D" />
           </linearGradient>
+          {/* Arrowheads stop just short of the port dots so the flow direction reads clearly. */}
+          {[['on', '#F26B1D'], ['off', '#CDD2DA']].map(([tone, fill]) => (
+            <marker key={tone} id={`path-arrow-${tone}`} viewBox="0 0 10 10" refX="15" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto" overflow="visible">
+              <path d="M1 1.2 L9 5 L1 8.8 L3 5 Z" fill={fill} />
+            </marker>
+          ))}
         </defs>
         {NODE.ys.map((y, i) => {
           const on = lit.has(i);
           return (
             <g key={`${step}-${i}`}>
-              <path d={connector(y)} stroke={on ? '#F7C4A3' : '#E3E6EC'} strokeWidth={on ? 2.2 : 1.6} strokeLinecap="round" className="transition-[stroke] duration-500" />
+              <path d={connector(y)} stroke={on ? '#F7C4A3' : '#E3E6EC'} strokeWidth={on ? 2.2 : 1.6} strokeLinecap="round" className="transition-[stroke] duration-500" markerEnd={`url(#path-arrow-${on ? 'on' : 'off'})`} />
               {on && <path d={connector(y)} pathLength="100" stroke="#FF9A57" strokeWidth="6" strokeLinecap="round" className="landing-path-trail" style={{ animationDelay: `${i * 0.18}s` }} />}
               {on && <path d={connector(y)} pathLength="100" stroke="#F26B1D" strokeWidth="2.4" strokeLinecap="round" className="landing-path-pulse" style={{ animationDelay: `${i * 0.18}s` }} />}
               <circle cx={NODE.x + NODE.w} cy={y} r="3.5" fill="#FFFFFF" stroke={on ? '#F26B1D' : '#CDD2DA'} strokeWidth="1.5" />
             </g>
           );
         })}
-        <path d={out} stroke="#F7C4A3" strokeWidth="2.2" strokeLinecap="round" />
+        <path d={out} stroke="#F7C4A3" strokeWidth="2.2" strokeLinecap="round" markerEnd="url(#path-arrow-on)" />
         <path key={`trail-${step}-${point}`} d={out} pathLength="100" stroke="#FF9A57" strokeWidth="6" strokeLinecap="round" className="landing-path-trail" style={{ animationDelay: '0.5s' }} />
         <path key={`out-${step}-${point}`} d={out} pathLength="100" stroke="#F26B1D" strokeWidth="2.4" strokeLinecap="round" className="landing-path-pulse" style={{ animationDelay: '0.5s' }} />
         <circle cx={hubLeft} cy={HUB.y} r="3.5" fill="#FFFFFF" stroke="#F26B1D" strokeWidth="1.5" />
@@ -429,21 +436,68 @@ const pillars = [
   },
 ];
 
+// Clips the centre-to-centre segment so it starts and ends on the node boxes' borders (+gap).
+function edgeBetween(a, b, gap = 6) {
+  const ca = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
+  const cb = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+  const dx = cb.x - ca.x; const dy = cb.y - ca.y;
+  const exit = (box) => {
+    const tx = dx ? (box.w / 2 + gap) / Math.abs(dx) : Infinity;
+    const ty = dy ? (box.h / 2 + gap) / Math.abs(dy) : Infinity;
+    return Math.min(tx, ty);
+  };
+  const ta = exit(a); const tb = exit(b);
+  return { x1: ca.x + dx * ta, y1: ca.y + dy * ta, x2: cb.x - dx * tb, y2: cb.y - dy * tb };
+}
+
 function FlowBoard({ pillar, active }) {
   const lit = new Set([active, active === pillar.points.length - 1 ? pillar.nodes.length - 1 : active]);
+  const board = useRef(null);
+  const boxes = useRef([]);
+  const [rects, setRects] = useState([]);
+  useEffect(() => {
+    const measure = () => {
+      const root = board.current?.getBoundingClientRect();
+      if (!root) return;
+      setRects(boxes.current.map((el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.left - root.left, y: r.top - root.top, w: r.width, h: r.height };
+      }));
+    };
+    measure();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (observer && board.current) observer.observe(board.current);
+    window.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+  }, [pillar]);
+  const markerId = `flow-arrow-${pillar.number}`;
   return (
-    <div className="relative h-[520px] overflow-hidden bg-[#10181e]" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.16) 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
+    <div ref={board} className="relative h-[520px] overflow-hidden bg-[#10181e]" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.16) 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
       <svg className="absolute inset-0 h-full w-full" aria-hidden="true">
-        {pillar.edges.map(([from, to]) => (
-          <line key={`${from}-${to}`} x1={`${pillar.nodes[from][2]}%`} y1={`${pillar.nodes[from][3]}%`} x2={`${pillar.nodes[to][2]}%`} y2={`${pillar.nodes[to][3]}%`} stroke={lit.has(from) || lit.has(to) ? '#2ee0ef' : '#1d4e57'} strokeWidth="2" />
-        ))}
+        <defs>
+          {['on', 'off'].map((tone) => (
+            <marker key={tone} id={`${markerId}-${tone}`} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+              <path d="M1 1.2 L9 5 L1 8.8 L3 5 Z" fill={tone === 'on' ? '#2ee0ef' : '#2a7580'} />
+            </marker>
+          ))}
+        </defs>
+        {pillar.edges.map(([from, to]) => {
+          const on = lit.has(from) || lit.has(to);
+          const stroke = on ? '#2ee0ef' : '#1d4e57';
+          if (rects[from] && rects[to]) {
+            const e = edgeBetween(rects[from], rects[to]);
+            return <line key={`${from}-${to}`} {...e} stroke={stroke} strokeWidth="2" strokeLinecap="round" markerEnd={`url(#${markerId}-${on ? 'on' : 'off'})`} style={on ? { filter: 'drop-shadow(0 0 3px rgba(46,224,239,0.45))' } : undefined} />;
+          }
+          return <line key={`${from}-${to}`} x1={`${pillar.nodes[from][2]}%`} y1={`${pillar.nodes[from][3]}%`} x2={`${pillar.nodes[to][2]}%`} y2={`${pillar.nodes[to][3]}%`} stroke={stroke} strokeWidth="2" />;
+        })}
       </svg>
       {pillar.nodes.map(([title, stage, x, y], index) => {
         const on = lit.has(index);
         return (
           <div key={title} className="absolute w-[168px] -translate-x-1/2 -translate-y-1/2" style={{ left: `${x}%`, top: `${y}%` }}>
             {pillar.tags[index] && <span className={`mb-1 inline-block px-2 py-0.5 text-[10px] font-semibold ${on ? 'bg-[#2ee0ef] text-[#082126]' : 'bg-[#16343a] text-[#8fdbe3]'}`}>{pillar.tags[index]}</span>}
-            <div className={`flex items-center gap-2 border px-3 py-2 ${on ? 'border-[#2ee0ef] bg-[#0f3c44] shadow-[0_0_22px_rgba(46,224,239,0.28)]' : 'border-[#1d6670] bg-[#121c24]'}`}>
+            <div ref={(el) => { boxes.current[index] = el; }} className={`flex items-center gap-2 border px-3 py-2 ${on ? 'border-[#2ee0ef] bg-[#0f3c44] shadow-[0_0_22px_rgba(46,224,239,0.28)]' : 'border-[#1d6670] bg-[#121c24]'}`}>
               <span className={`grid h-8 w-8 shrink-0 place-items-center text-xs font-bold ${on ? 'bg-[#2ee0ef] text-[#082126]' : 'border border-[#2ee0ef] text-[#2ee0ef]'}`}>{index + 1}</span>
               <span>
                 <span className="block text-sm font-semibold leading-tight text-white">{title}</span>
@@ -501,7 +555,10 @@ function useScrollStep(ref, count) {
 
 // Tiles in three close tones of the next section's cream background, so the hero's bottom edge
 // dissolves into the section that scrolls up right behind it (like uipath.com).
-const HERO_TILE_TONES = ['#FCF9F5', '#F8F3EC', '#FFFDFA'];
+const HERO_TILE_TONES = ['#0B1A33', '#0E1F3D', '#112544', '#13294B', '#0D1C38'];
+const HERO_NAVY = '#0B1A33';
+const HERO_TILE_ALPHA = 0.48; // the hero image shows through softly
+const HERO_NEXT_BG = '#FBF8F4'; // the 'See the path in action' section
 const HERO_TILE_COLOR = HERO_TILE_TONES[0];
 
 /**
@@ -541,7 +598,7 @@ function useHeroScroll({ heroRef, imageRef, fadeRef, canvasRef }) {
           // Small jitter keeps the front dense and connected (no stray holes); the last tile
           // finishes exactly at progress 1, when the pin releases and the dark frame scrolls away.
           const start = fromBottom * 0.7 + Math.random() * 0.2 - 0.12; // bottom row already stepped at rest
-          tiles.push({ x: c * size, y: r * size, start, color: HERO_TILE_TONES[Math.floor(Math.random() * HERO_TILE_TONES.length)] });
+          tiles.push({ x: c * size, y: r * size, start: r === rows - 1 ? Math.min(start, -0.1) : start, color: HERO_TILE_TONES[Math.floor(Math.random() * HERO_TILE_TONES.length)] });
         }
       }
       last = -1;
@@ -569,11 +626,25 @@ function useHeroScroll({ heroRef, imageRef, fadeRef, canvasRef }) {
       for (const tile of tiles) {
         const local = (progress - tile.start) / 0.1;
         if (local <= 0) continue;
-        ctx.globalAlpha = Math.min(local, 1);
+        ctx.globalAlpha = Math.min(local, 1) * HERO_TILE_ALPHA;
         ctx.fillStyle = tile.color;
         ctx.fillRect(tile.x, tile.y, size + 0.5, size + 0.5);
+        // Soft cube shading: a faint top/left highlight and a slightly darker bottom/right edge.
+        ctx.fillStyle = 'rgba(120,160,230,0.10)';
+        ctx.fillRect(tile.x, tile.y, size, 1.5);
+        ctx.fillRect(tile.x, tile.y, 1.5, size);
+        ctx.fillStyle = 'rgba(2,8,20,0.28)';
+        ctx.fillRect(tile.x, tile.y + size - 1.5, size, 1.5);
+        ctx.fillRect(tile.x + size - 1.5, tile.y, 1.5, size);
       }
       ctx.globalAlpha = 1;
+      // The last row melts into the next section inside the hero's own height (no added strip).
+      const melt = Math.min(size * 0.75, height);
+      const gradient = ctx.createLinearGradient(0, height - melt, 0, height);
+      gradient.addColorStop(0, 'rgba(251,248,244,0)');
+      gradient.addColorStop(1, HERO_NEXT_BG);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, height - melt, width, melt);
       if (imageRef.current) imageRef.current.style.transform = `translate3d(-50%, calc(-50% - ${progress * 60}px), 0) scale(${1 + progress * 0.08})`;
       // Words dim one after another, last word first, down to a soft grey.
       words.forEach((word, index) => {
@@ -725,7 +796,7 @@ export default function LandingPage() {
       {/* Hero: pinned for ~120vh of scroll while pixel tiles in the next section's colour fill in
           from the bottom, the headline dims word by word, and the image slowly scales. */}
       <section id="top" ref={heroRef} className="relative -mt-20">
-        <div className="relative h-screen min-h-[820px] overflow-hidden">
+        <div className="relative h-screen min-h-[820px] overflow-hidden bg-[#0B1A33]">
           <div ref={heroImageRef} className="pointer-events-none absolute left-1/2 top-1/2 will-change-transform" style={{ width: 'max(100%, calc(820px * 1672 / 941))', aspectRatio: '1672 / 941', transform: 'translate3d(-50%, -50%, 0)' }} aria-hidden="true">
             <img src={heroImage} alt="" className="absolute inset-0 h-full w-full" />
             {heroCubes.map((cube, index) => (
@@ -873,16 +944,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <footer id="contact" className="bg-[#172125] px-5 py-10 text-sm text-white/70">
-        <div className="mx-auto flex max-w-6xl flex-wrap justify-between gap-6">
-          <img src={logoLightImage} alt="URAP" className="h-9 w-auto" />
-          <div className="flex gap-6">
-            <a href="#platform">Platform</a>
-            <a href="#solutions">Solutions</a>
-            <Link to="/login">Sign in</Link>
-          </div>
-        </div>
-      </footer>
+      <LandingFooter />
+      <AskAi />
     </div>
   );
 }
