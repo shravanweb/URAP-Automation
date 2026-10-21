@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { PageLoader } from '../components/Loader.jsx';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api, clearSession, currentUser, getRefreshToken } from '../services/api.js';
 import { Icon } from '../components/brand.jsx';
@@ -430,7 +431,7 @@ export default function CloudLayout() {
         </div>
       )}
 
-      <Outlet />
+      <Suspense fallback={<PageLoader />}><Outlet /></Suspense>
     </div>
   );
 }

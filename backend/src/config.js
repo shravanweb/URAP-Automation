@@ -74,6 +74,10 @@ export function loadConfig(overrides = {}) {
     rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60000),
     rateLimitMax: Number(process.env.RATE_LIMIT_MAX || 300),
     authRateLimitMax: Number(process.env.AUTH_RATE_LIMIT_MAX || 20),
+    refreshRateLimitMax: Number(process.env.REFRESH_RATE_LIMIT_MAX || 60),
+    jsonBodyLimit: process.env.JSON_BODY_LIMIT || '1mb',
+    // Set to e.g. 1 or 'loopback' only when running behind a reverse proxy, so rate limits see client IPs.
+    trustProxy: process.env.TRUST_PROXY || '',
     // Self-service sign-up from the public site. New accounts join the default tenant with
     // SIGNUP_ROLE (never administrator) and get a starter project named after their organization.
     allowSignup: process.env.ALLOW_SIGNUP !== 'false',

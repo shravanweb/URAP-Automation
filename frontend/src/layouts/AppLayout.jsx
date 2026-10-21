@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { PageLoader } from '../components/Loader.jsx';
+import { Suspense, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api, clearSession, currentUser, getRefreshToken } from '../services/api.js';
 import { Icon } from '../components/brand.jsx';
@@ -192,7 +193,7 @@ export default function AppLayout() {
             </div>
           </div>
         )}
-        <main id="app-main" className="min-w-0 flex-1 p-4 sm:p-6"><Outlet /></main>
+        <main id="app-main" className="min-w-0 flex-1 p-4 sm:p-6"><Suspense fallback={<PageLoader />}><Outlet /></Suspense></main>
       </div>
     </div>
   );

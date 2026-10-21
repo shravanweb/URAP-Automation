@@ -1,32 +1,36 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import AppLayout from './layouts/AppLayout.jsx';
 import CloudLayout from './layouts/CloudLayout.jsx';
 import { currentUser } from './services/api.js';
+import { PageLoader, TopProgress } from './components/Loader.jsx';
 import LoginPage from './pages/auth/LoginPage.jsx';
 import SignupPage from './pages/auth/SignupPage.jsx';
-import ForgotPasswordPage from './pages/auth/ForgotPasswordPage.jsx';
-import LegalPage from './pages/LegalPage.jsx';
 import LandingPage from './pages/LandingPage.jsx';
-import DashboardPage from './pages/DashboardPage.jsx';
-import HomePage from './pages/HomePage.jsx';
-import StudioPage from './pages/StudioPage.jsx';
-import FlowEditorPage from './pages/FlowEditorPage.jsx';
-import FlowRunPage from './pages/FlowRunPage.jsx';
-import AgentBuilderPage from './pages/AgentBuilderPage.jsx';
-import AgentRunPage from './pages/AgentRunPage.jsx';
-import AppDesignerPage from './pages/AppDesignerPage.jsx';
-import AppRuntimePage from './pages/AppRuntimePage.jsx';
-import AppsPage from './pages/AppsPage.jsx';
-import CaseTypeDesignerPage from './pages/CaseTypeDesignerPage.jsx';
-import BpmnModelerPage from './pages/BpmnModelerPage.jsx';
-import BpmnRunPage from './pages/BpmnRunPage.jsx';
-import CasesPage from './pages/CasesPage.jsx';
-import CaseDetailPage from './pages/CaseDetailPage.jsx';
-import ProjectsPage from './pages/ProjectsPage.jsx';
-import WorkflowsPage from './pages/WorkflowsPage.jsx';
-import OperationsPage from './pages/OperationsPage.jsx';
-import QueuesPage from './pages/QueuesPage.jsx';
-import ActionCenterPage from './pages/ActionCenterPage.jsx';
+
+// Signed-in pages load on demand; the landing and auth pages stay in the main bundle for a fast first paint.
+const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage.jsx'));
+const LegalPage = lazy(() => import('./pages/LegalPage.jsx'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage.jsx'));
+const HomePage = lazy(() => import('./pages/HomePage.jsx'));
+const StudioPage = lazy(() => import('./pages/StudioPage.jsx'));
+const FlowEditorPage = lazy(() => import('./pages/FlowEditorPage.jsx'));
+const FlowRunPage = lazy(() => import('./pages/FlowRunPage.jsx'));
+const AgentBuilderPage = lazy(() => import('./pages/AgentBuilderPage.jsx'));
+const AgentRunPage = lazy(() => import('./pages/AgentRunPage.jsx'));
+const AppDesignerPage = lazy(() => import('./pages/AppDesignerPage.jsx'));
+const AppRuntimePage = lazy(() => import('./pages/AppRuntimePage.jsx'));
+const AppsPage = lazy(() => import('./pages/AppsPage.jsx'));
+const CaseTypeDesignerPage = lazy(() => import('./pages/CaseTypeDesignerPage.jsx'));
+const BpmnModelerPage = lazy(() => import('./pages/BpmnModelerPage.jsx'));
+const BpmnRunPage = lazy(() => import('./pages/BpmnRunPage.jsx'));
+const CasesPage = lazy(() => import('./pages/CasesPage.jsx'));
+const CaseDetailPage = lazy(() => import('./pages/CaseDetailPage.jsx'));
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage.jsx'));
+const WorkflowsPage = lazy(() => import('./pages/WorkflowsPage.jsx'));
+const OperationsPage = lazy(() => import('./pages/OperationsPage.jsx'));
+const QueuesPage = lazy(() => import('./pages/QueuesPage.jsx'));
+const ActionCenterPage = lazy(() => import('./pages/ActionCenterPage.jsx'));
 
 function RequireAuth() {
   const location = useLocation();
@@ -41,6 +45,9 @@ function PublicOnly({ children }) {
 
 export default function App() {
   return (
+    <>
+    <TopProgress />
+    <Suspense fallback={<PageLoader />}>
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
@@ -85,5 +92,7 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
+    </>
   );
 }

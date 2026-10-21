@@ -9,6 +9,7 @@ import { ActivityIcon, CodeField, DropIllustration, Glyph } from '../components/
 import { Icon } from '../components/brand.jsx';
 import { templateByKey } from '../lib/workflowTemplates.js';
 import { useRunWorkflow } from '../components/RunInputDialog.jsx';
+import { SkeletonRows } from '../components/Loader.jsx';
 
 const EXECUTION = { native: { icon: 'bolt', label: 'Native' }, uipath: { icon: 'robot', label: 'Robot' }, hybrid: { icon: 'parallel', label: 'Hybrid' }, desktop: { icon: 'monitor', label: 'Desktop' }, web: { icon: 'globe', label: 'Web' } };
 const parseDate = (value) => new Date(String(value || '').includes('T') ? value : `${String(value || '').replace(' ', 'T')}Z`);
@@ -51,6 +52,7 @@ function WorkflowLibrary() {
   const listRun = (row) => { setError(''); runWorkflow(row); };
   const user = currentUser();
   const [rows, setRows] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [projects, setProjects] = useState([]);
   // ?projectId= (from Studio's "Open") pre-filters the library to one project.
   const query = new URLSearchParams(useLocation().search);
@@ -63,6 +65,7 @@ function WorkflowLibrary() {
     for (const [key, value] of Object.entries(next)) if (value) params.set(key, value);
     const result = await api(`/api/workflows?${params.toString()}`);
     setRows(result.data);
+    setLoaded(true);
   }
 
   useEffect(() => {
@@ -97,7 +100,7 @@ function WorkflowLibrary() {
       </form>
       <ErrorText>{error}</ErrorText>
       {message && <p className="text-sm text-success" role="status">{message}</p>}
-      {rows.length === 0 ? <EmptyState title="No workflows" body="Build a workflow, validate it, and publish a version before running it." /> : (
+      {!loaded && !error ? <SkeletonRows rows={6} cols={4} label="Loading workflows" /> : rows.length === 0 ? <EmptyState title="No workflows" body="Build a workflow, validate it, and publish a version before running it." /> : (
         <div className="overflow-auto rounded-lg border border-line bg-white">
           <table className="w-full table-fixed text-left text-sm"><thead className="bg-cream2 text-muted"><tr><th className="px-3 py-2">Name</th><th className="w-48 px-3 py-2">Project</th><th className="w-32 px-3 py-2">Execution</th><th className="w-28 px-3 py-2">Status</th><th className="w-32 px-3 py-2">Updated</th><th className="w-36 px-3 py-2 2xl:w-[19rem]"><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{rows.map((row) => {

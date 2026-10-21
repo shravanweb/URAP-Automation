@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api.js';
 import { EmptyState, ErrorText, StatusBadge, buttonClass, inputClass } from '../components/ui.jsx';
+import { SkeletonCards, SkeletonRows } from '../components/Loader.jsx';
 
 const METRICS = [
   ['totalProjects', 'Projects'],
@@ -53,7 +54,7 @@ export default function DashboardPage() {
         <button className={buttonClass} type="submit">Apply filters</button>
       </form>
       <ErrorText>{error}</ErrorText>
-      {!data ? <p className="text-sm text-muted">Loading metrics…</p> : (
+      {!data ? (error ? null : <div className="space-y-4"><SkeletonCards count={4} /><SkeletonRows rows={4} cols={3} label="Loading metrics" /></div>) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {METRICS.map(([key, label]) => (

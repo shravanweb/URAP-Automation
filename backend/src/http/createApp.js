@@ -19,6 +19,7 @@ import { can } from '../lib/permissions.js';
 import { hashPassword, verifyPassword } from '../lib/passwords.js';
 import { encryptJson, sha256 } from '../lib/cryptoSecrets.js';
 import { redact } from '../lib/redact.js';
+import { clientError, corsOptions, effectiveBcryptRounds, needsRehash } from '../lib/security.js';
 import { resolveInside } from '../lib/paths.js';
 import { validateDefinition } from '../workflow/validate.js';
 import { parseCron, nextRun } from '../scheduler/cron.js';
@@ -140,14 +141,22 @@ function presentConnection(row) {
 }
 
 export function createApp(options = {}) {
-  const cfg = options.config || loadConfig();
+  const baseCfg = options.config || loadConfig();
+  const cfg = { ...baseCfg, bcryptRounds: effectiveBcryptRounds(baseCfg.bcryptRounds) };
   const pool = options.pool;
   if (!pool) throw new Error('createApp requires a database pool');
   const app = express();
   app.disable('x-powered-by');
-  app.use(helmet());
-  app.use(cors({ origin: cfg.corsOrigin }));
-  app.use(express.json({ limit: '1mb' }));
+  if (cfg.trustProxy) app.set('trust proxy', cfg.trustProxy);
+  // JSON-only API: lock the CSP down completely; the SPA is served by Vite / a static host with its own headers.
+  app.use(helmet({
+    contentSecurityPolicy: { useDefaults: false, directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"], formAction: ["'none'"] } },
+    crossOriginResourcePolicy: { policy: 'same-site' },
+  }));
+  app.use(cors(corsOptions(cfg.corsOrigin)));
+  app.use(express.json({ limit: cfg.jsonBodyLimit || '1mb' }));
+  app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   if (cfg.env !== 'test') {
     app.use(rateLimit({ windowMs: cfg.rateLimitWindowMs, limit: cfg.rateLimitMax, standardHeaders: true, legacyHeaders: false }));
   }
@@ -157,7 +166,20 @@ export function createApp(options = {}) {
     limit: cfg.env === 'test' ? 1000 : cfg.authRateLimitMax,
     standardHeaders: true,
     legacyHeaders: false,
+    handler: (_req, res) => res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many attempts. Wait a minute and try again.' } }),
   });
+
+  // Refresh/logout are called on every session renewal, so they get a looser budget than login.
+  const refreshLimit = rateLimit({
+    windowMs: cfg.rateLimitWindowMs,
+    limit: cfg.env === 'test' ? 1000 : (cfg.refreshRateLimitMax ?? 60),
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (_req, res) => res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many session requests. Wait a minute and try again.' } }),
+  });
+
+  // Compared against when the email is unknown so login timing doesn't reveal which accounts exist.
+  const dummyHash = hashPassword(crypto.randomBytes(16).toString('hex'), cfg.bcryptRounds);
 
   const signupLimit = rateLimit({
     windowMs: cfg.signupRateLimitWindowMs ?? 3600000,
@@ -278,13 +300,17 @@ export function createApp(options = {}) {
   registerPublicAsk(app, { pool, cfg, chat: options.askChat });
 
   app.post('/api/auth/login', authLimit, wrap(async (req, res) => {
-    const body = z.object({ email: z.string().email(), password: z.string().min(1) }).safeParse(req.body);
+    const body = z.object({ email: z.string().trim().email().max(320), password: z.string().min(1).max(200), remember: z.boolean().optional() }).safeParse(req.body);
     if (!body.success) throw validationError(body.error.issues);
     const [rows] = await pool.query(`SELECT * FROM users WHERE email = ?`, [body.data.email.toLowerCase()]);
     const user = rows[0];
-    const valid = user ? await verifyPassword(body.data.password, user.password_hash) : false;
+    const valid = await verifyPassword(body.data.password, user ? user.password_hash : await dummyHash);
     if (!user || !valid || user.status !== 'active') {
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
+    }
+    if (needsRehash(user.password_hash, cfg.bcryptRounds)) {
+      // Upgrade older, weaker hashes transparently on a successful sign-in.
+      await pool.query(`UPDATE users SET password_hash = ? WHERE id = ?`, [await hashPassword(body.data.password, cfg.bcryptRounds), user.id]);
     }
     await writeAudit(pool, { tenantId: user.tenant_id, userId: user.id, action: 'auth.login', entityType: 'user', entityId: user.id, ip: req.ip });
     res.json({ data: { accessToken: signAccess(user), refreshToken: await issueRefresh(user), user: presentUser(user) } });
@@ -354,8 +380,8 @@ export function createApp(options = {}) {
     res.status(201).json({ data: { accessToken: signAccess(rows[0]), refreshToken: await issueRefresh(rows[0]), user: presentUser(rows[0]), projectId } });
   }));
 
-  app.post('/api/auth/refresh', wrap(async (req, res) => {
-    const token = z.object({ refreshToken: z.string().min(20) }).safeParse(req.body);
+  app.post('/api/auth/refresh', refreshLimit, wrap(async (req, res) => {
+    const token = z.object({ refreshToken: z.string().min(20).max(200) }).safeParse(req.body);
     if (!token.success) throw validationError(token.error.issues);
     const [rows] = await pool.query(
       `SELECT t.id AS token_id, u.id, u.tenant_id, u.email, u.display_name, u.role, u.status
@@ -371,7 +397,7 @@ export function createApp(options = {}) {
     res.json({ data: { accessToken: signAccess(rows[0]), refreshToken: await issueRefresh(rows[0]), user: presentUser(rows[0]) } });
   }));
 
-  app.post('/api/auth/logout', wrap(async (req, res) => {
+  app.post('/api/auth/logout', refreshLimit, wrap(async (req, res) => {
     const token = req.body?.refreshToken;
     if (typeof token === 'string') {
       await pool.query(`UPDATE refresh_tokens SET revoked_at = UTC_TIMESTAMP(3) WHERE token_hash = ?`, [sha256(token)]);
@@ -1122,7 +1148,8 @@ export function createApp(options = {}) {
     if (!rows[0]) throw new AppError(404, 'NOT_FOUND', 'Artifact not found');
     await loadProject(req.user, rows[0].project_id);
     const absolute = resolveInside(path.join(cfg.storageRoot, rows[0].tenant_id, rows[0].project_id), rows[0].storage_path);
-    res.download(absolute, rows[0].file_name);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.download(absolute, path.basename(rows[0].file_name), { dotfiles: 'deny' });
   }));
 
   app.get('/api/settings', requireUser, wrap(async (req, res) => {
@@ -1640,12 +1667,9 @@ export function createApp(options = {}) {
       res.status(error.status).json({ error: { code: error.code, message: error.message, details: error.details || null } });
       return;
     }
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      res.status(400).json({ error: { code: 'FILE_TOO_LARGE', message: 'File exceeds the 10 MB limit' } });
-      return;
-    }
-    if (error.code === 'ER_DUP_ENTRY') {
-      res.status(409).json({ error: { code: 'CONFLICT', message: 'A matching record already exists' } });
+    const known = clientError(error);
+    if (known) {
+      res.status(known.status).json({ error: { code: known.code, message: known.message } });
       return;
     }
     console.error(JSON.stringify({ code: error.code || 'INTERNAL', message: error.message }));

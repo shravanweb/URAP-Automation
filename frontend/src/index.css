@@ -110,3 +110,32 @@
 .urap-bpmn .djs-shape.urap-dim .djs-visual { opacity: 0.55; }
 @keyframes urap-bpmn-pulse { 0%, 100% { stroke-opacity: 1; } 50% { stroke-opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .urap-bpmn .djs-shape.urap-active .djs-visual > :nth-child(1) { animation: none; } }
+
+/* ---- URAP loader ---- */
+@keyframes urap-spin { to { transform: rotate(360deg); } }
+@keyframes urap-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(0.94); } }
+@keyframes urap-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes urap-progress { 0% { width: 0; } 30% { width: 45%; } 70% { width: 78%; } 100% { width: 92%; } }
+.urap-loader-arc { animation: urap-spin 0.9s cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite; }
+.urap-loader-pulse { animation: urap-pulse 1.8s ease-in-out infinite; }
+.urap-skeleton { background: linear-gradient(90deg, #F3EEE8 25%, #FBF8F5 50%, #F3EEE8 75%); background-size: 200% 100%; animation: urap-shimmer 1.4s ease-in-out infinite; }
+.urap-progress { width: 0; animation: urap-progress 8s cubic-bezier(0.1, 0.7, 0.2, 1) forwards; border-radius: 0 3px 3px 0; }
+.urap-progress-done { animation: none; width: 100% !important; opacity: 0; transition: width 0.2s ease-out, opacity 0.3s ease 0.15s; }
+@media (prefers-reduced-motion: reduce) {
+  .urap-loader-arc, .urap-loader-pulse, .urap-skeleton { animation: none; }
+  .urap-progress { animation: none; width: 60%; }
+  .urap-progress-done { transition: none; }
+}
+
+/* ---- Landing use-case hub ---- */
+@keyframes usecase-flow { to { stroke-dashoffset: -18; } }
+@keyframes usecase-dot { 0%, 100% { box-shadow: 0 0 0 3px rgba(250,70,22,0.18); } 50% { box-shadow: 0 0 0 6px rgba(250,70,22,0.08); } }
+.usecase-link { animation: usecase-flow 1.6s linear infinite; }
+.usecase-dot { animation: usecase-dot 2.4s ease-in-out infinite; }
+@keyframes hub-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes hub-glow { 0%, 100% { opacity: 0.85; transform: translate(-50%, -50%) scale(1); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); } }
+@keyframes hub-target { 0%, 100% { box-shadow: 0 0 0 4px rgba(250,70,22,0.10); } 50% { box-shadow: 0 0 0 7px rgba(250,70,22,0.05); } }
+.hub-float { animation: hub-float 5s ease-in-out infinite; }
+.hub-glow { animation: hub-glow 5s ease-in-out infinite; }
+.hub-target { animation: hub-target 2.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .usecase-link, .usecase-dot, .hub-float, .hub-glow, .hub-target { animation: none; } }

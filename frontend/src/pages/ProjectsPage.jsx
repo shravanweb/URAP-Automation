@@ -6,6 +6,7 @@ import { api, currentUser, download } from '../services/api.js';
 import CategorySelect, { categoryIcon } from '../components/CategorySelect.jsx';
 import { Icon } from '../components/brand.jsx';
 import { EmptyState, ErrorText, Field, Modal, StatusBadge, buttonClass, inputClass, quietClass } from '../components/ui.jsx';
+import { SkeletonRows } from '../components/Loader.jsx';
 
 const schema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(200),
@@ -219,6 +220,7 @@ export default function ProjectsPage() {
   const user = currentUser();
   const canManage = ['administrator', 'project_manager'].includes(user?.role);
   const [rows, setRows] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState([]);
   const [query, setQuery] = useState({ search: '', status: '', category: '', sort: 'created_at', order: 'desc' });
@@ -231,6 +233,7 @@ export default function ProjectsPage() {
     const result = await api(`/api/projects?${params.toString()}`);
     setRows(result.data);
     setTotal(result.meta.total);
+    setLoaded(true);
   }
 
   useEffect(() => {
@@ -252,7 +255,7 @@ export default function ProjectsPage() {
         <button className={buttonClass} type="submit">Apply</button>
       </form>
       <ErrorText>{error}</ErrorText>
-      {rows.length === 0 ? <EmptyState title="No projects" body="Create a project for any business process. The category is a label, not a limit on what the workflow can do." /> : (
+      {!loaded && !error ? <SkeletonRows rows={6} cols={5} label="Loading projects" /> : rows.length === 0 ? <EmptyState title="No projects" body="Create a project for any business process. The category is a label, not a limit on what the workflow can do." /> : (
         <div className="overflow-auto rounded-lg border border-line bg-white">
           <table className="w-full table-fixed text-left text-sm">
             <thead className="bg-cream2 text-muted"><tr><th className="px-3 py-2">Name</th><th className="w-44 px-3 py-2">Category</th><th className="w-28 px-3 py-2">Status</th><th className="w-32 px-3 py-2">Created</th><th className="w-44 px-3 py-2 2xl:w-[22rem]"><span className="sr-only">Actions</span></th></tr></thead>

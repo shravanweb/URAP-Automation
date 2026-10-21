@@ -1,3 +1,4 @@
+import { trackActivity } from './activity.js';
 const ACCESS = 'urap.access';
 const REFRESH = 'urap.refresh';
 const USER = 'urap.user';
@@ -156,7 +157,13 @@ export async function download(path, filename) {
   URL.revokeObjectURL(url);
 }
 
-export async function api(path, options = {}) {
+export function api(path, options = {}) {
+  // Background polls pass { quiet: true } so the top progress bar only reflects user-visible loading.
+  const { quiet, ...rest } = options;
+  return quiet ? apiRequest(path, rest) : trackActivity(apiRequest(path, rest));
+}
+
+async function apiRequest(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
   const request = () => {

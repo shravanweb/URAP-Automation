@@ -14,6 +14,7 @@ import './landing-legacy.css';
 import AskAi from '../components/AskAi.jsx';
 import LandingFooter from '../components/LandingFooter.jsx';
 import { DesktopMegaNav, MobileMegaNav } from '../components/MegaMenu.jsx';
+import UseCasesSection from '../components/UseCasesSection.jsx';
 
 // Floating cubes cut out of the hero image; positions are percentages of the 1672x941 artwork.
 const heroCubes = [
@@ -557,12 +558,12 @@ function FlowBoard({ pillar, sectionRef }) {
 }
 
 const solutions = [
-  ['ERP', 'Sales orders, inventory, purchase orders, and shipment updates.'],
-  ['CRM', 'Customer records, lead processing, and follow-up tasks.'],
-  ['Finance', 'Invoice extraction, reconciliation, and report generation.'],
-  ['Files', 'Excel, CSV, and PDF text processing with a saved result.'],
-  ['Testing', 'Repeatable UI checks, API tests, and validation workflows.'],
-  ['Reporting', 'Scheduled exports and a history of every run.'],
+  ['ERP', 'Orders, inventory, shipments'],
+  ['CRM', 'Leads, records, follow-ups'],
+  ['Finance', 'Invoices and reconciliation'],
+  ['Files', 'Excel, CSV and PDF'],
+  ['Testing', 'UI and API checks'],
+  ['Reporting', 'Scheduled reports'],
 ];
 
 function useReveal(root) {
@@ -942,20 +943,7 @@ export default function LandingPage() {
         ))}
       </section>
 
-      <section id="solutions" className="bg-[#fff7f0] py-20">
-        <div data-reveal className="reveal mx-auto max-w-6xl px-5">
-          <h2 className="max-w-3xl text-4xl font-bold sm:text-5xl">Automation across the work you already do</h2>
-          <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {solutions.map(([title, body]) => (
-              <article key={title} className="border-t-4 border-[#fa4616] bg-white p-6">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#fa4616]">Use case</p>
-                <h3 className="mt-3 text-2xl font-bold">{title}</h3>
-                <p className="mt-3 text-[#3d474b]">{body}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
+      <UseCasesSection solutions={solutions} />
 
       <section id="start" className="bg-[#172125] py-20 text-white">
         <div data-reveal className="reveal mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-6 px-5">

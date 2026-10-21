@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/brand.jsx';
 import { api, currentUser, download } from '../services/api.js';
 import { EmptyState, ErrorText, Modal, StatusBadge, buttonClass, inputClass, quietClass } from '../components/ui.jsx';
+import { SkeletonRows } from '../components/Loader.jsx';
 
 const ACTIVE = ['QUEUED', 'CLAIMED', 'RUNNING', 'RETRY_WAIT', 'CANCEL_REQUESTED', 'SUSPENDED'];
 const JOB_STATUSES = ['QUEUED', 'CLAIMED', 'RUNNING', 'SUSPENDED', 'SUCCEEDED', 'FAILED', 'RETRY_WAIT', 'CANCEL_REQUESTED', 'CANCELLED', 'SKIPPED'];
@@ -50,7 +51,7 @@ function Connections() {
     setData({ connectors: connectorResult.data, connections: lists.flatMap((item, index) => item.data.map((row) => ({ ...row, projectName: projectResult.data[index].name }))) });
   }, []);
   const write = ['administrator', 'project_manager', 'automation_developer'].includes(user?.role);
-  if (!data) return <><ErrorText>{error}</ErrorText><p className="text-sm text-muted">Loading…</p></>;
+  if (!data) return <><ErrorText>{error}</ErrorText>{!error && <SkeletonRows rows={5} cols={4} />}</>;
   return (
     <>
       <ErrorText>{error}</ErrorText>
@@ -116,7 +117,7 @@ function Jobs() {
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={auto} onChange={(event) => setAuto(event.target.checked)} /> Auto refresh</label>
         <button className={buttonClass} type="submit">Apply</button>
       </form>
-      {!data ? <p className="text-sm text-muted">Loading…</p> : data.data.length === 0 ? <EmptyState title="No jobs" body="Queue a published workflow. A queued job is not a completed run." /> : (
+      {!data ? <SkeletonRows rows={6} cols={5} /> : data.data.length === 0 ? <EmptyState title="No jobs" body="Queue a published workflow. A queued job is not a completed run." /> : (
         <div className="overflow-auto rounded-lg border border-line bg-white"><table className="min-w-full text-sm"><thead className="bg-cream2 text-muted"><tr><th className="px-3 py-2 text-left">Job</th><th className="px-3 py-2 text-left">Project</th><th className="px-3 py-2 text-left">Target</th><th className="px-3 py-2 text-left">Trigger</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-left">Attempt</th><th className="px-3 py-2 text-left">Queued</th><th className="px-3 py-2 text-left">Error</th></tr></thead>
           <tbody>{data.data.map((job) => <tr key={job.id} className="border-t border-line"><td className="px-3 py-2"><Link className="font-mono text-emberdark" to={`/jobs/${job.id}`}>{job.id.slice(0, 8)}</Link></td><td className="px-3 py-2">{projectName(job.projectId)}</td><td className="px-3 py-2">{job.executionTarget}</td><td className="px-3 py-2">{job.triggerSource}</td><td className="px-3 py-2"><StatusBadge status={job.status} /></td><td className="px-3 py-2">{job.attempt}/{job.maxAttempts}</td><td className="px-3 py-2">{job.queuedAt}</td><td className="max-w-xs truncate px-3 py-2 text-danger">{job.errorSummary}</td></tr>)}</tbody></table>
           <p className="px-3 py-2 text-xs text-muted">{data.meta.total} job(s)</p></div>
@@ -218,7 +219,7 @@ function JobDetail() {
     if (!workflowId) return;
     api(`/api/workflows/${workflowId}`).then((result) => setWorkflowName(result.data?.name || '')).catch(() => {});
   }, [workflowId]);
-  if (!data) return <><ErrorText>{error}</ErrorText><p className="text-sm text-muted">Loading…</p></>;
+  if (!data) return <><ErrorText>{error}</ErrorText>{!error && <SkeletonRows rows={5} cols={4} />}</>;
   const job = data.data;
   const control = ['administrator', 'project_manager', 'operator'].includes(user?.role);
   const finishedSteps = job.steps.filter((step) => step.status !== 'RUNNING');
@@ -376,7 +377,7 @@ function Schedules() {
     setData({ workflows: workflowResult.data, schedules: scheduleResult.data });
   }, []);
   const write = ['administrator', 'project_manager'].includes(user?.role);
-  if (!data) return <><ErrorText>{error}</ErrorText><p className="text-sm text-muted">Loading…</p></>;
+  if (!data) return <><ErrorText>{error}</ErrorText>{!error && <SkeletonRows rows={5} cols={4} />}</>;
   const workflowName = (id) => data.workflows.find((item) => item.id === id)?.name || id.slice(0, 8);
   return (
     <>
@@ -474,7 +475,7 @@ function Audit() {
         <input className={inputClass} placeholder="Filter action, e.g. job. or workflow.publish" value={action} onChange={(event) => setAction(event.target.value)} />
         <button className={buttonClass} type="submit">Apply</button>
       </form>
-      {!data ? <p className="text-sm text-muted">Loading…</p> : data.data.length === 0 ? <EmptyState title="No audit events" body="Sign-in, project changes, publishes, and job actions are recorded." /> : (
+      {!data ? <SkeletonRows rows={6} cols={5} /> : data.data.length === 0 ? <EmptyState title="No audit events" body="Sign-in, project changes, publishes, and job actions are recorded." /> : (
         <>
           <ul className="divide-y divide-line rounded-lg border border-line bg-white">{data.data.map((row) => <li key={row.id} className="px-3 py-2 text-sm">{row.created_at} · <span className="font-medium">{row.action}</span> · {row.entity_type} {row.entity_id ? row.entity_id.slice(0, 8) : ''} · {row.actor_email || (row.actor_robot_name ? `robot ${row.actor_robot_name}` : 'system')}</li>)}</ul>
           <div className="flex items-center gap-2 text-sm"><button className={quietClass} type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous</button><span>{offset + 1}–{Math.min(offset + 50, data.meta.total)} of {data.meta.total}</span><button className={quietClass} type="button" disabled={offset + 50 >= data.meta.total} onClick={() => setOffset(offset + 50)}>Next</button></div>
@@ -518,7 +519,7 @@ function Settings() {
   async function act(work, done) {
     try { await work(); setError(''); setMessage(done); await reload(); } catch (err) { setError(err.message); }
   }
-  if (!data) return <><ErrorText>{error}</ErrorText><p className="text-sm text-muted">Loading…</p></>;
+  if (!data) return <><ErrorText>{error}</ErrorText>{!error && <SkeletonRows rows={5} cols={4} />}</>;
   return (
     <div className="space-y-4">
       <ErrorText>{error}</ErrorText>

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api, currentUser } from '../services/api.js';
 import { EmptyState, ErrorText, StatusBadge, buttonClass, inputClass, quietClass } from '../components/ui.jsx';
+import { SkeletonRows } from '../components/Loader.jsx';
 
 const PRIORITY_TONE = { critical: 'bg-danger text-white', high: 'bg-warning text-white', medium: 'bg-sand text-ink', low: 'bg-line text-ink' };
 const OUTCOME_LABEL = { approve: 'Approve', reject: 'Reject', submit: 'Submit' };
@@ -145,6 +146,7 @@ export default function ActionCenterPage() {
   const params = useParams();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [projects, setProjects] = useState([]);
   const [filters, setFilters] = useState({ status: 'pending', mine: false, projectId: '' });
   const [error, setError] = useState('');
@@ -157,6 +159,7 @@ export default function ActionCenterPage() {
     if (next.projectId) query.set('projectId', next.projectId);
     const result = await api(`/api/tasks?${query.toString()}`);
     setTasks(result.data);
+    setLoaded(true);
     return result.data;
   }
 
@@ -184,7 +187,7 @@ export default function ActionCenterPage() {
       <ErrorText>{error}</ErrorText>
       {message && <p className="text-sm text-success" role="status">{message}</p>}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        {tasks.length === 0 ? <EmptyState title="No tasks" body="Tasks appear here when a workflow reaches a Create Form Task activity." /> : (
+        {!loaded && !error ? <SkeletonRows rows={5} cols={3} label="Loading tasks" /> : tasks.length === 0 ? <EmptyState title="No tasks" body="Tasks appear here when a workflow reaches a Create Form Task activity." /> : (
           <ul className="space-y-2">
             {tasks.map((task) => (
               <li key={task.id}>
