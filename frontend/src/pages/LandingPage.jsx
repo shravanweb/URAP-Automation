@@ -13,6 +13,7 @@ import logoMarkImage from '../assets/logo-mark.png';
 import './landing-legacy.css';
 import AskAi from '../components/AskAi.jsx';
 import LandingFooter from '../components/LandingFooter.jsx';
+import { DesktopMegaNav, MobileMegaNav } from '../components/MegaMenu.jsx';
 
 // Floating cubes cut out of the hero image; positions are percentages of the 1672x941 artwork.
 const heroCubes = [
@@ -730,6 +731,7 @@ export default function LandingPage() {
   const pillarRefs = [useRef(null), useRef(null), useRef(null)];
   const [solidHeader, setSolidHeader] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [megaOpen, setMegaOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
 
@@ -767,31 +769,12 @@ export default function LandingPage() {
         <a href="#platform" className="font-semibold text-[#fa4616]">See the components →</a>
       </div>
 
-      <header className={`sticky top-0 z-30 border-b transition-colors duration-300 ${solidHeader || menuOpen ? 'border-[#eadccd] bg-[#f6ebe0] shadow-[0_8px_24px_rgba(23,33,37,0.06)]' : 'border-[#172125]/10 bg-transparent hover:border-[#eadccd] hover:bg-[#f6ebe0] focus-within:border-[#eadccd] focus-within:bg-[#f6ebe0]'}`}>
+      <header className={`sticky top-0 z-30 border-b transition-colors duration-300 ${solidHeader || menuOpen || megaOpen ? 'border-[#eadccd] bg-[#f6ebe0] shadow-[0_8px_24px_rgba(23,33,37,0.06)]' : 'border-[#172125]/10 bg-transparent hover:border-[#eadccd] hover:bg-[#f6ebe0] focus-within:border-[#eadccd] focus-within:bg-[#f6ebe0]'}`}>
         <div className="flex h-20 items-stretch px-5 sm:px-8 lg:px-10">
           <a href="#top" className="mr-6 flex shrink-0 items-center" aria-label="URAP home">
             <img src={logoImage} alt="URAP" className="h-[52px] w-auto max-w-[200px] object-contain" />
           </a>
-          <nav className="hidden items-stretch xl:flex" aria-label="Main">
-            {navMenus.map((menu) => (
-              <div key={menu.label} className="group relative flex items-stretch">
-                <a href={menu.items[0].href} className="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 text-[15px] font-medium text-[#172125] hover:text-[#fa4616] 2xl:px-3 2xl:text-[16px]">
-                  {menu.icon === 'code' && (
-                    <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M6.2 5.5 3.8 8l2.4 2.5M9.8 5.5 12.2 8l-2.4 2.5" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>
-                  )}
-                  {menu.label}
-                </a>
-                <div className="invisible absolute left-0 top-full z-40 w-80 border border-[#e6e1da] bg-white p-2 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
-                  {menu.items.map((item) => (
-                    <a key={item.name} href={item.href} className="block px-3 py-2 hover:bg-[#fff6f2]">
-                      <span className="block text-sm font-semibold text-[#172125]">{item.name}</span>
-                      <span className="block text-xs text-[#5c656a]">{item.detail}</span>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </nav>
+          <DesktopMegaNav onOpenChange={setMegaOpen} />
           <div className="ml-auto flex items-stretch">
             <div className="relative hidden items-center pr-2 sm:flex">
               {searchOpen && (
@@ -828,9 +811,7 @@ export default function LandingPage() {
         </div>
         {menuOpen && (
           <div className="border-t border-[#eadccd] bg-[#f6ebe0] px-5 py-3 xl:hidden">
-            {navMenus.map((menu) => (
-              <a key={menu.label} className="block py-2" href={menu.items[0].href} onClick={() => setMenuOpen(false)}>{menu.label}</a>
-            ))}
+            <MobileMegaNav onPick={() => setMenuOpen(false)} />
             <a className="block py-2" href="#contact" onClick={() => setMenuOpen(false)}>Contact us</a>
             <Link className="block py-2" to="/login">Sign in</Link>
           </div>
