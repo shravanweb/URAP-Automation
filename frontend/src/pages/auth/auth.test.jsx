@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import LoginPage, { loginErrorMessage } from './LoginPage.jsx';
 import SignupPage, { signupSchema } from './SignupPage.jsx';
 import ForgotPasswordPage from './ForgotPasswordPage.jsx';
+import ResetPasswordPage from './ResetPasswordPage.jsx';
 import LandingPage from '../LandingPage.jsx';
 import LegalPage from '../LegalPage.jsx';
 
@@ -50,6 +51,8 @@ describe('public pages', () => {
 
   it('renders the forgot-password, legal, and landing pages', () => {
     expect(render('/forgot-password', <ForgotPasswordPage />)).toContain('Contact your URAP administrator');
+    expect(render('/forgot-password', <ForgotPasswordPage />)).toContain('Email me a reset link');
+    expect(render('/reset-password?token=abc', <ResetPasswordPage />)).toContain('Set a new password');
     const legal = render('/legal', <LegalPage />);
     expect(legal).toContain('id="terms"');
     expect(legal).toContain('id="privacy"');

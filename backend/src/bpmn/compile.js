@@ -321,6 +321,12 @@ export function compileBpmn(xml) {
 
   const walk = (container, depth) => {
     const flows = kids(container, 'sequenceFlow');
+    const eventTimers = new Set();
+    for (const gateway of container.children) {
+      if (gateway.ns === BPMN_NS && gateway.local === 'eventBasedGateway') {
+        for (const flowEdge of flows) if (flowEdge.attrs.sourceRef === gateway.attrs.id) eventTimers.add(flowEdge.attrs.targetRef);
+      }
+    }
     for (const element of container.children) {
       if (element.ns !== BPMN_NS) continue;
       const { local } = element;
@@ -341,7 +347,7 @@ export function compileBpmn(xml) {
             node(id, 'start', name); passThrough.add(id);
             break;
           }
-          if (element.attrs.isInterrupting === 'false') unsupported('non-interrupting start events are not supported');
+          if (element.attrs.isInterrupting === 'false') add(warnings, `${label}: a non-interrupting start runs as a normal start`, id);
           if (start) { unsupported('a process can have only one start event'); break; }
           start = id;
           const config = { trigger: 'manual' };
@@ -376,6 +382,14 @@ export function compileBpmn(xml) {
         }
         case 'intermediateCatchEvent': {
           const kind = eventKind(element);
+          if (eventTimers.has(id)) {
+            const def = kid(element, 'timerEventDefinition');
+            const duration = def ? kid(def, 'timeDuration')?.text.trim() : '';
+            const seconds = duration ? isoDurationSeconds(duration) : 0;
+            node(id, 'timer', name || 'Wait', { seconds: seconds || 1 });
+            passThrough.add(id);
+            break;
+          }
           if (kind !== 'timer') { unsupported(`${kind === 'none' ? 'plain' : kind} intermediate catch events are not supported. Use a timer`); break; }
           const def = kid(element, 'timerEventDefinition');
           const duration = kid(def, 'timeDuration')?.text.trim();
@@ -460,18 +474,64 @@ export function compileBpmn(xml) {
           walk(element, depth + 1);
           break;
         }
-        case 'boundaryEvent':
-          unsupported('boundary events are not supported. Model the timeout or error path with a gateway after the task');
+        case 'boundaryEvent': {
+          const kind = eventKind(element);
+          const hostId = element.attrs.attachedToRef;
+          if (element.attrs.cancelActivity === 'false') { unsupported('non-interrupting boundary events are not supported. Use an interrupting timer'); break; }
+          if (kind !== 'timer') { unsupported(`${kind === 'none' ? 'plain' : kind} boundary events are not supported. Use a timer`); break; }
+          const timerDef = kid(element, 'timerEventDefinition');
+          const duration = timerDef ? kid(timerDef, 'timeDuration')?.text.trim() : '';
+          const seconds = duration ? isoDurationSeconds(duration) : null;
+          if (!seconds || seconds < 1 || seconds > MAX_TIMER_SECONDS) { unsupported(duration ? `"${duration}" must be a duration between 1 second and 30 days (like PT10M)` : 'set how long the boundary timer waits (a duration like PT10M)'); break; }
+          const host = nodes.get(hostId);
+          if (!host || !['human', 'robot', 'agent', 'case'].includes(host.type)) { unsupported('attach the timer to a user task or a service task'); break; }
+          host.config.boundary = { seconds, eventId: id, to: null };
+          node(id, 'parallel', name || 'Timeout', {}, id);
+          passThrough.add(id);
+          edges.push({ id: `${id}__on`, from: hostId, to: id, bpmnId: id });
           break;
-        case 'eventBasedGateway':
-          unsupported('event-based gateways are not supported. Use an exclusive gateway with conditions');
+        }
+        case 'eventBasedGateway': {
+          const outs = flows.filter((flowEdge) => flowEdge.attrs.sourceRef === id);
+          const delays = {};
+          let ok = outs.length >= 2;
+          if (!ok) unsupported('an event-based gateway needs at least two outgoing timer events');
+          for (const flowEdge of outs) {
+            const target = container.children.find((child) => child.attrs?.id === flowEdge.attrs.targetRef);
+            const timerDef = target ? kid(target, 'timerEventDefinition') : null;
+            const duration = timerDef ? kid(timerDef, 'timeDuration')?.text.trim() : '';
+            const seconds = duration ? isoDurationSeconds(duration) : null;
+            if (!target || target.local !== 'intermediateCatchEvent' || eventKind(target) !== 'timer' || !seconds) {
+              unsupported('an event-based gateway must be followed only by timer catch events with a duration (like PT10M)');
+              ok = false;
+              break;
+            }
+            delays[target.attrs.id] = seconds;
+          }
+          if (ok) node(id, 'race', name || 'Wait for the first', { delays });
           break;
-        case 'inclusiveGateway':
-          unsupported('inclusive gateways are not supported. Use an exclusive gateway, or a parallel gateway when every branch runs');
+        }
+        case 'inclusiveGateway': {
+          const ins = flows.filter((flow) => flow.attrs.targetRef === id).length;
+          const outs = flows.filter((flow) => flow.attrs.sourceRef === id).length;
+          if (outs >= 2 && ins >= 2) {
+            node(id, 'join', name || 'Join', { takenFrom: `${id}__split` });
+            node(`${id}__split`, 'inclusive', name || 'Include', {}, id);
+            splitOf.set(id, `${id}__split`);
+            edges.push({ id: `${id}__e`, from: id, to: `${id}__split`, bpmnId: id });
+          } else if (outs >= 2) node(id, 'inclusive', name || 'Include');
+          else if (ins >= 2) node(id, 'join', name || 'Join', { takenFrom: '' });
+          else { node(id, 'inclusive', name); passThrough.add(id); }
           break;
-        case 'intermediateThrowEvent':
-          unsupported('intermediate throw events are not supported. Remove it or use a timer catch event');
+        }
+        case 'intermediateThrowEvent': {
+          const kind = eventKind(element);
+          if (!['none', 'message'].includes(kind)) { unsupported(`${kind} throw events are not supported. Use a none or message throw`); break; }
+          node(id, 'parallel', name || (kind === 'message' ? 'Send message' : 'Throw'), {}, id);
+          passThrough.add(id);
+          if (kind === 'message') add(warnings, `${label}: the run continues here. URAP does not deliver the BPMN message to another pool`, id);
           break;
+        }
         default:
           unsupported(`${elementLabel(local)}s are not supported. Use a User task or a Service task`);
       }
@@ -493,7 +553,7 @@ export function compileBpmn(xml) {
       const isDefault = sourceElement?.attrs.default === id;
       const edge = { id, from: sourceElement?.local === 'subProcess' ? `${sourceRef}__out` : (splitOf.get(sourceRef) || sourceRef), to: container.children.find((child) => child.attrs?.id === targetRef)?.local === 'subProcess' ? `${targetRef}__in` : targetRef, bpmnId: id };
       if (flow.attrs.name) edge.label = flow.attrs.name.slice(0, 80);
-      if (sourceElement?.local === 'exclusiveGateway') {
+      if (['exclusiveGateway', 'inclusiveGateway'].includes(sourceElement?.local)) {
         if (isDefault) edge.isDefault = true;
         else if (condition) edge.condition = condition;
       } else if (condition && sourceElement) add(warnings, `The condition on the flow after ${sourceElement.attrs.name || elementLabel(sourceElement.local)} is ignored. Conditions only apply after an exclusive gateway`, id);
@@ -523,6 +583,29 @@ export function compileBpmn(xml) {
   }
   // Pass-through-to-pass-through chains resolve because each rewire uses the current outgoing edge.
 
+  for (const entry of nodes.values()) {
+    if (entry.type !== 'join' || entry.config.takenFrom !== '') continue;
+    const splits = [...nodes.values()].filter((item) => item.type === 'inclusive' && reaches(edges, item.id, entry.id));
+    if (splits.length === 1) entry.config.takenFrom = splits[0].id;
+    else add(errors, `${entry.name || 'Join'}: connect it to one inclusive split`, entry.config.bpmnId);
+  }
+  for (const entry of nodes.values()) {
+    if (entry.type !== 'race' || !entry.config.delays) continue;
+    const remapped = {};
+    for (const edge of edges.filter((item) => item.from === entry.id)) {
+      const catchId = (edge.via || []).find((via) => entry.config.delays[via] != null);
+      if (catchId) remapped[edge.to] = entry.config.delays[catchId];
+    }
+    entry.config.delays = remapped;
+  }
+  for (const entry of nodes.values()) {
+    const boundary = entry.config?.boundary;
+    if (!boundary?.eventId) continue;
+    const edge = edges.find((item) => item.from === entry.id && (item.bpmnId === boundary.eventId || (item.via || []).includes(boundary.eventId)));
+    if (!edge) add(errors, 'The boundary timer needs an outgoing sequence flow', boundary.eventId);
+    else boundary.to = edge.to;
+  }
+
   if (start && nodes.get(start)) {
     const outs = edges.filter((edge) => edge.from === start);
     if (outs.length > 1) add(errors, 'The start event can have only one outgoing flow. Add a parallel gateway to start several branches', start);
@@ -530,7 +613,9 @@ export function compileBpmn(xml) {
   for (const entry of nodes.values()) {
     if (['robot', 'agent', 'human', 'http', 'case', 'timer'].includes(entry.type)) {
       const outs = edges.filter((edge) => edge.from === entry.id);
-      if (outs.length > 1) add(errors, `${entry.name || 'This step'} has ${outs.length} outgoing flows. Add a gateway to choose (exclusive) or run them all (parallel)`, entry.config.bpmnId);
+      const boundaryTo = entry.config?.boundary?.to;
+      const regular = boundaryTo ? outs.filter((edge) => edge.to !== boundaryTo) : outs;
+      if (regular.length > 1) add(errors, `${entry.name || 'This step'} has ${regular.length} outgoing flows. Add a gateway to choose (exclusive) or run them all (parallel)`, entry.config.bpmnId);
     }
   }
   const validEdges = edges.filter((edge) => nodes.has(edge.from) && nodes.has(edge.to));
@@ -546,6 +631,22 @@ export function compileBpmn(xml) {
     bpmn: { processId: proc.attrs.id, lanes: lanes.map(({ id, name, role }) => ({ id, name, role })) },
   };
   return { definition, errors, warnings, elements, process: { id: proc.attrs.id, name: proc.attrs.name || participantName(participants, proc) || '' }, trigger };
+}
+
+function reaches(edges, fromId, toId) {
+  const seen = new Set();
+  const stack = [fromId];
+  while (stack.length) {
+    const id = stack.pop();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    for (const edge of edges) {
+      if (edge.from !== id) continue;
+      if (edge.to === toId) return true;
+      stack.push(edge.to);
+    }
+  }
+  return false;
 }
 
 function participantName(participants, proc) {

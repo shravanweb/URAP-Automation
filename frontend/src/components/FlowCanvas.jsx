@@ -19,6 +19,9 @@ export const NODE_META = {
   decision: { label: 'Decision', icon: 'decision', tone: 'bg-[#FDF5E6] text-[#8A5A0B]', body: 'Choose a branch by comparing variables.' },
   parallel: { label: 'Parallel split', icon: 'parallel', tone: 'bg-[#EAF1FB] text-[#2F5FA8]', body: 'Start every outgoing branch at the same time.' },
   join: { label: 'Join', icon: 'join', tone: 'bg-[#EAF1FB] text-[#2F5FA8]', body: 'Wait until all incoming branches have arrived.' },
+  inclusive: { label: 'Inclusive split', icon: 'parallel', tone: 'bg-[#EAF1FB] text-[#2F5FA8]', body: 'Run every branch whose condition matches, then join only those branches.' },
+  loop: { label: 'Loop', icon: 'refresh', tone: 'bg-[#FDF5E6] text-[#8A5A0B]', body: 'Repeat the next step until the limit, the list, or the condition says stop, then take Done.' },
+  race: { label: 'Wait for first', icon: 'clock', tone: 'bg-[#E8F6F6] text-[#127C81]', body: 'Wait for the shortest timer branch, then continue on that path.' },
   timer: { label: 'Timer', icon: 'clock', tone: 'bg-[#E8F6F6] text-[#127C81]', body: 'Pause the process for a set time.' },
   http: { label: 'HTTP call', icon: 'api', tone: 'bg-slate-100 text-slate-700', body: 'Call a REST API through a project connection.' },
   end: { label: 'End', icon: 'endNode', tone: 'bg-slate-100 text-ink', body: 'Finish this branch of the process.' },
@@ -48,6 +51,7 @@ export function nodeSummary(node, lookups = {}) {
     case 'robot': return lookups.workflows?.find((item) => item.id === config.workflowId)?.name || (config.workflowId ? 'Workflow' : 'Choose a workflow');
     case 'agent': return lookups.agents?.find((item) => item.id === config.agentId)?.name || (config.agentId ? 'Agent' : 'Choose an agent');
     case 'human': return config.title || 'Untitled task';
+    case 'loop': return config.source ? `Each ${config.itemVar || 'item'} · max ${config.maxIterations || 1}` : `Up to ${config.maxIterations || 1} times`;
     case 'case': return lookups.caseTypes?.find((item) => item.id === config.caseTypeId)?.name || (config.caseTypeId ? 'Case type' : 'Choose a case type');
     case 'timer': return config.seconds ? formatSeconds(Number(config.seconds)) : 'Set a delay';
     case 'http': return `${String(config.method || 'GET').toUpperCase()} ${config.path || '/'}`;

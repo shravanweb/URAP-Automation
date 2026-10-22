@@ -21,7 +21,7 @@ import { incomingCount, outgoingEdges, outputVarOf } from './definition.js';
 const parse = (value) => (typeof value === 'string' ? JSON.parse(value) : value);
 const sqlDate = (date) => new Date(date).toISOString().slice(0, 23).replace('T', ' ');
 const LEASE_SECONDS = 60;
-const MAX_PASSES = 100;
+const MAX_PASSES = 400;
 
 export async function addEvent(pool, runId, nodeId, event, message, data = null) {
   await pool.query(
@@ -154,15 +154,35 @@ async function succeed(pool, state, row, node, output, { follow } = {}) {
   if (outputVar && output !== undefined) { state.variables[outputVar] = output; state.dirty = true; }
   await updateNode(pool, row.id, { status: 'SUCCEEDED', finished_at: sqlDate(new Date()), output_json: output === undefined ? null : JSON.stringify(clampJson(output)) });
   await addEvent(pool, state.run.id, node.id, 'node.succeeded', `${node.name || node.id} completed`, output === undefined || node.type === 'start' ? null : { output });
-  const edges = follow || outgoingEdges(state.definition, node.id);
+  const edges = follow || continueEdges(state, node);
   for (const edge of edges) await activate(pool, state, edge.to);
+}
+
+function continueEdges(state, node) {
+  const edges = outgoingEdges(state.definition, node.id);
+  const boundaryTo = node.config?.boundary?.to;
+  return boundaryTo ? edges.filter((edge) => edge.to !== boundaryTo) : edges;
+}
+
+function conditionHolds(condition, values) {
+  if (!condition?.left) return true;
+  const left = getPath(values, String(condition.left).replace(/^\{\{\s*|\s*\}\}$/g, ''));
+  const right = resolveTemplates(condition.right ?? '', values);
+  return compareValues(left, condition.op || 'eq', right);
+}
+
+function withBoundary(node, fields) {
+  const seconds = Number(node.config?.boundary?.seconds);
+  if (Number.isFinite(seconds) && seconds >= 1) fields.wake_at = sqlDate(new Date(Date.now() + seconds * 1000));
+  return fields;
 }
 
 async function activate(pool, state, nodeId) {
   const node = state.nodesById.get(nodeId);
   if (!node) return;
   if (node.type === 'join') {
-    const needed = incomingCount(state.definition, node.id);
+    const recorded = node.config?.takenFrom ? Number(state.variables[`__taken_${node.config.takenFrom}`]) : NaN;
+    const needed = Number.isInteger(recorded) ? recorded : incomingCount(state.definition, node.id);
     const [rows] = await pool.query(`SELECT * FROM flow_run_nodes WHERE run_id = ? AND node_id = ? AND status = 'WAITING' LIMIT 1`, [state.run.id, node.id]);
     if (rows[0]) {
       const arrivals = rows[0].arrivals + 1;
@@ -189,6 +209,22 @@ async function fail(pool, state, row, node, message) {
   state.failed = `${node.name || node.id}: ${message}`;
 }
 
+async function takeBoundary(pool, state, row, node) {
+  if (row.job_id) {
+    const [jobs] = await pool.query(`SELECT * FROM automation_jobs WHERE id = ?`, [row.job_id]);
+    if (jobs[0] && !['SUCCEEDED', 'FAILED', 'CANCELLED', 'SKIPPED'].includes(jobs[0].status)) await cancelJob(pool, jobs[0]).catch(() => {});
+  }
+  if (row.agent_run_id) {
+    const [agentRuns] = await pool.query(`SELECT * FROM agent_runs WHERE id = ?`, [row.agent_run_id]);
+    if (agentRuns[0] && ['RUNNING', 'WAITING', 'IDLE'].includes(agentRuns[0].status)) await cancelAgentRun(pool, {}, agentRuns[0], null).catch(() => {});
+  }
+  if (row.task_id) {
+    await pool.query(`UPDATE action_tasks SET status = 'cancelled', comment = COALESCE(comment, 'A timer boundary interrupted this task'), updated_at = UTC_TIMESTAMP(3) WHERE id = ? AND status = 'pending'`, [row.task_id]);
+  }
+  const edge = outgoingEdges(state.definition, node.id).find((item) => item.to === node.config.boundary.to);
+  await succeed(pool, state, row, node, { timedOut: true, waitedSeconds: Number(node.config.boundary.seconds) }, { follow: edge ? [edge] : [] });
+}
+
 function pseudoJob(run) {
   return { id: null, tenant_id: run.tenant_id, project_id: run.project_id, workflow_id: null };
 }
@@ -209,6 +245,52 @@ async function step(pool, cfg, state, row, node) {
       case 'join':
         await succeed(pool, state, row, node, undefined);
         return true;
+      case 'loop': {
+        const max = Math.min(50, Math.max(1, Number(config.maxIterations) || 1));
+        const key = `__loop_${node.id}`;
+        const count = Number(state.variables[key] || 0) + 1;
+        state.variables[key] = count;
+        state.dirty = true;
+        const edges = outgoingEdges(state.definition, node.id);
+        const done = edges.find((edge) => edge.isDefault);
+        const body = edges.find((edge) => edge !== done);
+        const sourcePath = String(config.source || '').replace(/^\{\{\s*|\s*\}\}$/g, '');
+        const listed = sourcePath ? getPath(ctx(), sourcePath) : undefined;
+        const list = Array.isArray(listed) ? listed : null;
+        let keep = count <= max && (!list || count <= list.length);
+        if (keep && config.condition?.left) keep = conditionHolds(config.condition, ctx());
+        if (keep && list && /^[A-Za-z][A-Za-z0-9_]{0,62}$/.test(String(config.itemVar || ''))) {
+          state.variables[config.itemVar] = list[count - 1];
+        }
+        if (keep && body) await succeed(pool, state, row, node, { iteration: count, ...(list ? { item: list[count - 1] } : {}) }, { follow: [body] });
+        else await succeed(pool, state, row, node, { iterations: Math.max(0, count - (keep ? 0 : 1)) }, { follow: done ? [done] : [] });
+        return true;
+      }
+      case 'inclusive': {
+        const edges = outgoingEdges(state.definition, node.id);
+        const values = ctx();
+        const matches = edges.filter((edge) => !edge.isDefault && (!edge.condition?.left || conditionHolds(edge.condition, values)));
+        const taken = matches.length ? matches : edges.filter((edge) => edge.isDefault);
+        if (!taken.length) throw new AppError(400, 'NO_BRANCH', 'No inclusive branch matched and there is no default branch');
+        state.variables[`__taken_${node.id}`] = taken.length;
+        state.dirty = true;
+        await succeed(pool, state, row, node, { branches: taken.length }, { follow: taken });
+        return true;
+      }
+      case 'race': {
+        const edges = outgoingEdges(state.definition, node.id);
+        const delays = config.delays || {};
+        let best = null;
+        for (const edge of edges) {
+          const seconds = Number(delays[edge.to]);
+          if (!Number.isFinite(seconds)) continue;
+          if (!best || seconds < best.seconds) best = { edge, seconds };
+        }
+        if (!best) throw new AppError(400, 'NO_BRANCH', 'The race has no timed branch');
+        await updateNode(pool, row.id, { status: 'WAITING', wake_at: sqlDate(new Date(Date.now() + best.seconds * 1000)), input_json: JSON.stringify({ to: best.edge.to, seconds: best.seconds }) });
+        await addEvent(pool, run.id, node.id, 'node.waiting', `${node.name || node.id} waits ${best.seconds}s for the first branch`);
+        return true;
+      }
       case 'decision': {
         const edges = outgoingEdges(state.definition, node.id);
         const values = ctx();
@@ -241,7 +323,7 @@ async function step(pool, cfg, state, row, node) {
           input, triggerSource: 'flow',
         });
         await pool.query(`UPDATE automation_jobs SET flow_run_id = ? WHERE id = ?`, [run.id, job.id]);
-        await updateNode(pool, row.id, { status: 'WAITING', job_id: job.id, input_json: JSON.stringify(clampJson(input)) });
+        await updateNode(pool, row.id, withBoundary(node, { status: 'WAITING', job_id: job.id, input_json: JSON.stringify(clampJson(input)) }));
         await addEvent(pool, run.id, node.id, 'node.waiting', `${node.name || node.id} queued job for ${workflow.name}`, { jobId: job.id });
         return true;
       }
@@ -256,7 +338,7 @@ async function step(pool, cfg, state, row, node) {
           agent, config: parse(versions[0].config_json), versionId: agent.current_version_id, user: run.started_by ? { id: run.started_by } : null,
           input, mode: 'task', source: 'flow', flowRunId: run.id,
         });
-        await updateNode(pool, row.id, { status: 'WAITING', agent_run_id: agentRun.id, input_json: JSON.stringify(clampJson(input)) });
+        await updateNode(pool, row.id, withBoundary(node, { status: 'WAITING', agent_run_id: agentRun.id, input_json: JSON.stringify(clampJson(input)) }));
         await addEvent(pool, run.id, node.id, 'node.waiting', `${node.name || node.id} started agent ${agent.name}`, { agentRunId: agentRun.id });
         return true;
       }
@@ -277,7 +359,7 @@ async function step(pool, cfg, state, row, node) {
         };
         const task = await createTask(pool, pseudoJob(run), node.id, taskConfig);
         await pool.query(`UPDATE action_tasks SET flow_run_id = ? WHERE id = ?`, [run.id, task.id]);
-        await updateNode(pool, row.id, { status: 'WAITING', task_id: task.id, input_json: JSON.stringify(clampJson({ title: taskConfig.title, data: taskConfig.data })) });
+        await updateNode(pool, row.id, withBoundary(node, { status: 'WAITING', task_id: task.id, input_json: JSON.stringify(clampJson({ title: taskConfig.title, data: taskConfig.data })) }));
         await addEvent(pool, run.id, node.id, 'node.waiting', `${node.name || node.id} created Action Center task “${taskConfig.title}”`, { taskId: task.id });
         return true;
       }
@@ -295,7 +377,7 @@ async function step(pool, cfg, state, row, node) {
         const summary = { caseId: created.id, reference: created.reference, status: created.status, stage: created.current_stage_id };
         await updateNode(pool, row.id, { input_json: JSON.stringify(summary) });
         if (config.waitForResolution && !['resolved', 'closed'].includes(created.status)) {
-          await updateNode(pool, row.id, { status: 'WAITING' });
+          await updateNode(pool, row.id, withBoundary(node, { status: 'WAITING' }));
           await addEvent(pool, run.id, node.id, 'node.waiting', `${node.name || node.id} opened case ${created.reference} and waits for it to be resolved`, { caseId: created.id });
         } else {
           await succeed(pool, state, row, node, summary);
@@ -328,6 +410,19 @@ async function step(pool, cfg, state, row, node) {
     }
   }
   // WAITING
+  if (['robot', 'human', 'agent', 'case'].includes(node.type) && node.config?.boundary?.to && row.wake_at && new Date(`${String(row.wake_at).replace(' ', 'T')}Z`) <= new Date()) {
+    await takeBoundary(pool, state, row, node);
+    return true;
+  }
+  if (node.type === 'race') {
+    if (row.wake_at && new Date(`${String(row.wake_at).replace(' ', 'T')}Z`) <= new Date()) {
+      const chosen = parse(row.input_json) || {};
+      const edge = outgoingEdges(state.definition, node.id).find((item) => item.to === chosen.to);
+      await succeed(pool, state, row, node, { waitedSeconds: chosen.seconds }, { follow: edge ? [edge] : [] });
+      return true;
+    }
+    return false;
+  }
   if (node.type === 'timer') {
     if (row.wake_at && new Date(`${row.wake_at.replace(' ', 'T')}Z`) <= new Date()) {
       await succeed(pool, state, row, node, { waitedSeconds: Number(config.seconds) });

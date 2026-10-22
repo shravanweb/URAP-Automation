@@ -183,9 +183,9 @@ describe('BPMN compile', () => {
     const at = (id) => errors.filter((item) => item.elementId === id).map((item) => item.message).join(' | ');
     expect(at('Plain')).toContain('change it to a User task');
     expect(at('Script')).toContain('Script tasks are not supported');
-    expect(at('Incl')).toContain('inclusive gateways are not supported');
-    expect(at('Bound')).toContain('boundary events are not supported');
-    expect(at('Throw')).toContain('intermediate throw events are not supported');
+    expect(at('Incl')).toContain('exactly one outgoing');
+    expect(at('Bound')).toContain('set how long the boundary timer waits');
+    expect(at('Throw')).toContain('exactly one outgoing');
     expect(at('Svc')).toContain('unknown service type teleport');
     expect(at('E')).toContain('error end events are not supported');
     expect(at('f2')).toContain('is not understood');
@@ -199,6 +199,49 @@ describe('BPMN compile', () => {
     const branching = compileBpmn(doc(`<bpmn:startEvent id="S" /><bpmn:userTask id="U" /><bpmn:endEvent id="E1" /><bpmn:endEvent id="E2" />${flow('a', 'S', 'U')}${flow('b', 'U', 'E1')}${flow('c', 'U', 'E2')}`));
     expect(branching.errors).toEqual([expect.objectContaining({ elementId: 'U', message: expect.stringContaining('Add a gateway') })]);
     expect(parseConditionExpression("${vars.status != 'open'}")).toEqual({ left: 'vars.status', op: 'neq', right: 'open' });
+
+    const inclusive = compileBpmn(doc(`
+      <bpmn:startEvent id="S" />
+      <bpmn:inclusiveGateway id="Split" default="no" />
+      <bpmn:userTask id="A" name="A" />
+      <bpmn:userTask id="B" name="B" />
+      <bpmn:inclusiveGateway id="Join" />
+      <bpmn:endEvent id="E" />
+      ${flow('f1', 'S', 'Split')}
+      ${flow('yes', 'Split', 'A', '', '<bpmn:conditionExpression>${vars.flag == \'yes\'}</bpmn:conditionExpression>')}
+      ${flow('no', 'Split', 'B')}
+      ${flow('a', 'A', 'Join')}${flow('b', 'B', 'Join')}${flow('out', 'Join', 'E')}`));
+    expect(inclusive.errors).toEqual([]);
+    expect(byId(inclusive.definition, 'Split').type).toBe('inclusive');
+    expect(byId(inclusive.definition, 'Join').config.takenFrom).toBe('Split');
+    expect(validateDefinition(inclusive.definition).errors).toEqual([]);
+
+    const boundary = compileBpmn(doc(`
+      <bpmn:startEvent id="S" /><bpmn:userTask id="U" name="Approve" />
+      <bpmn:boundaryEvent id="Bound" attachedToRef="U"><bpmn:timerEventDefinition><bpmn:timeDuration>PT10M</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:boundaryEvent>
+      <bpmn:endEvent id="Ok" /><bpmn:endEvent id="Late" />
+      ${flow('f1', 'S', 'U')}${flow('f2', 'U', 'Ok')}${flow('f3', 'Bound', 'Late')}`));
+    expect(boundary.errors).toEqual([]);
+    expect(byId(boundary.definition, 'U').config.boundary).toMatchObject({ seconds: 600, to: 'Late' });
+    expect(validateDefinition(boundary.definition).errors).toEqual([]);
+
+    const thrown = compileBpmn(doc(`
+      <bpmn:startEvent id="S" /><bpmn:intermediateThrowEvent id="Throw" name="Notify"><bpmn:messageEventDefinition /></bpmn:intermediateThrowEvent><bpmn:endEvent id="E" />
+      ${flow('f1', 'S', 'Throw')}${flow('f2', 'Throw', 'E')}`));
+    expect(thrown.errors).toEqual([]);
+    expect(thrown.warnings.some((item) => item.elementId === 'Throw')).toBe(true);
+    expect(validateDefinition(thrown.definition).errors).toEqual([]);
+
+    const race = compileBpmn(doc(`
+      <bpmn:startEvent id="S" /><bpmn:eventBasedGateway id="Wait" />
+      <bpmn:intermediateCatchEvent id="Soon"><bpmn:timerEventDefinition><bpmn:timeDuration>PT5M</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:intermediateCatchEvent>
+      <bpmn:intermediateCatchEvent id="Later"><bpmn:timerEventDefinition><bpmn:timeDuration>PT1H</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:intermediateCatchEvent>
+      <bpmn:endEvent id="A" /><bpmn:endEvent id="B" />
+      ${flow('f1', 'S', 'Wait')}${flow('f2', 'Wait', 'Soon')}${flow('f3', 'Wait', 'Later')}${flow('f4', 'Soon', 'A')}${flow('f5', 'Later', 'B')}`));
+    expect(race.errors).toEqual([]);
+    expect(byId(race.definition, 'Wait').type).toBe('race');
+    expect(byId(race.definition, 'Wait').config.delays).toEqual({ A: 300, B: 3600 });
+    expect(validateDefinition(race.definition).errors).toEqual([]);
     expect(mapFlowIssues([{ nodeId: 'Both__split', message: 'x' }, { edgeId: 'a', message: 'y' }, { message: 'z' }], { nodes: [{ id: 'Both__split', config: { bpmnId: 'Both' } }], edges: [{ id: 'a', bpmnId: 'Flow_a' }] }))
       .toEqual([{ elementId: 'Both', message: 'x' }, { elementId: 'Flow_a', message: 'y' }, { message: 'z' }]);
   });

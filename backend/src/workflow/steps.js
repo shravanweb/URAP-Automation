@@ -239,6 +239,7 @@ export async function executeStep(step, context, services) {
       lines: source?.lines,
       minConfidence: config.minConfidence,
       dateOrder: config.dateOrder,
+      handwriting: config.handwriting === true,
     });
   }
   if (step.type === 'create_task' || step.type === 'wait_for_task') {

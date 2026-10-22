@@ -13,6 +13,7 @@ export const SELECTOR_TYPES = [
   ['label', 'Label'],
   ['placeholder', 'Placeholder'],
   ['testid', 'Test id'],
+  ['image', 'Image (PNG in project storage)'],
 ];
 
 export const CONTROL_TYPES = ['Button', 'CheckBox', 'ComboBox', 'Custom', 'DataGrid', 'DataItem', 'Document', 'Edit', 'Group', 'Hyperlink', 'List', 'ListItem', 'Menu', 'MenuItem', 'Pane', 'RadioButton', 'Tab', 'TabItem', 'Table', 'Text', 'Tree', 'TreeItem', 'Window'];
@@ -134,6 +135,7 @@ export const ACTIVITY_FIELDS = {
     { key: 'documentType', label: 'Template', kind: 'select', options: [['invoice', 'Invoice'], ['receipt', 'Receipt'], ['purchase_order', 'Purchase order'], ['', 'Custom fields only']] },
     { key: 'fields', label: 'Custom fields', kind: 'json', placeholder: '[{ "name": "reference", "label": "Ref", "type": "id", "required": true }]', help: 'type: string, id, amount, date, number, email, gstin. Use label(s) or a regex pattern.' },
     { key: 'minConfidence', label: 'Minimum confidence (0–1)', kind: 'number', placeholder: '0.8' },
+    { key: 'handwriting', label: 'Handwriting-tolerant matching', kind: 'checkbox', help: 'Folds common OCR confusions (0/O, 1/I/l, 5/S) while reading the value from the original text.' },
     { key: 'dateOrder', label: 'Date order', kind: 'select', options: [['DMY', 'Day/Month/Year'], ['MDY', 'Month/Day/Year']] },
   ],
   create_task: [

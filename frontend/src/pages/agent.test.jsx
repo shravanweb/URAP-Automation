@@ -73,7 +73,9 @@ describe('agent basics', () => {
     expect(dialog).toContain('Finance Ops');
     expect(dialog).toContain('Conversational');
     expect(dialog).toContain('Autonomous');
-    expect(dialog).toMatch(/Coded[\s\S]*Later/);
+    expect(dialog).toContain('Coded');
+    expect(dialog).toContain('sandbox');
+    expect(dialog).not.toContain('Coming later');
     const empty = renderToStaticMarkup(<NewAgentDialog projects={[]} onClose={() => {}} onCreated={() => {}} onNewProject={() => {}} />);
     expect(empty).toContain('Create a project first');
   });

@@ -86,6 +86,16 @@ export function loadConfig(overrides = {}) {
     signupRole: signupRole(process.env.SIGNUP_ROLE),
     signupRateLimitMax: Number(process.env.SIGNUP_RATE_LIMIT_MAX || 10),
     signupRateLimitWindowMs: Number(process.env.SIGNUP_RATE_LIMIT_WINDOW_MS || 3600000),
+    // Optional SMTP for account email (password reset). Leave SMTP_HOST empty to keep administrator resets.
+    publicUrl: (process.env.APP_PUBLIC_URL || 'http://localhost:5173').replace(/\/$/, ''),
+    smtp: process.env.SMTP_HOST ? {
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: process.env.SMTP_SECURE === 'true',
+      user: process.env.SMTP_USER || '',
+      password: process.env.SMTP_PASSWORD || '',
+      from: process.env.SMTP_FROM || process.env.SMTP_USER || 'urap@localhost',
+    } : null,
     orchestrator: {
       baseUrl: process.env.ORCHESTRATOR_BASE_URL || '',
       token: process.env.ORCHESTRATOR_TOKEN || '',

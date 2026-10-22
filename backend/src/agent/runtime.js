@@ -15,6 +15,7 @@ import { createTask, presentTask } from '../services/taskService.js';
 import { createRuntime } from '../services/runtime.js';
 import { buildToolSchemas } from './config.js';
 import { chat, resolveProvider } from './providers.js';
+import { runUserCode } from './sandbox.js';
 
 const parse = (value) => (typeof value === 'string' ? JSON.parse(value) : value);
 const LEASE_SECONDS = 150;
@@ -92,7 +93,8 @@ function missingRequired(fields = [], values = {}) {
 export async function startAgentRun(pool, cfg, { agent, config, versionId = null, user = null, input = {}, message = '', mode, source, flowRunId = null, background = true }) {
   const [projects] = await pool.query(`SELECT * FROM projects WHERE id = ?`, [agent.project_id]);
   if (projects[0]?.status !== 'active') throw new AppError(409, 'PROJECT_INACTIVE', 'Archived projects cannot run agents');
-  const settings = await resolveProvider(pool, cfg, { projectId: agent.project_id, connectionId: config.connectionId, model: config.model });
+  const coded = agent.agent_type === 'coded';
+  const settings = coded ? { label: 'JavaScript sandbox' } : await resolveProvider(pool, cfg, { projectId: agent.project_id, connectionId: config.connectionId, model: config.model });
   if (!settings) throw new AppError(409, 'AI_NOT_CONFIGURED', 'Connect an AI provider before running agents: add an AI provider connection to this project or set AI_PROVIDER on the server.');
   const safeInput = redact(input && typeof input === 'object' && !Array.isArray(input) ? input : {});
   if (mode === 'task') {
@@ -180,6 +182,20 @@ export async function advanceAgentRun(pool, cfg, runId) {
         }
         if (run.status !== 'RUNNING') await updateRun(pool, runId, { status: 'RUNNING' });
         continue;
+      }
+
+      const [typeRows] = await pool.query(`SELECT agent_type FROM agents WHERE id = ?`, [run.agent_id]);
+      if (typeRows[0]?.agent_type === 'coded') {
+        try {
+          const tools = {};
+          for (const tool of config.tools || []) if (tool.type === 'code' && tool.name && tool.source) tools[tool.name] = tool.source;
+          const output = await runUserCode({ source: config.source || '', input: parse(run.input_json) || {}, tools, timeoutMs: 8000 });
+          const value = output && typeof output === 'object' && !Array.isArray(output) ? output : { result: output };
+          await finish(pool, cfg, run, value);
+        } catch (error) {
+          await failRun(pool, cfg, run, error.message || 'The script failed', error.code || 'CODE_FAILED');
+        }
+        break;
       }
 
       // 2. Finished?
@@ -359,6 +375,10 @@ async function executeTool(pool, cfg, run, config, messageId, call) {
       }
       case 'query': {
         await toolDone(pool, messageId, await queryProject(pool, run, tool, args));
+        return;
+      }
+      case 'code': {
+        await toolDone(pool, messageId, await runUserCode({ source: tool.source, input: args, timeoutMs: 8000 }));
         return;
       }
       default:

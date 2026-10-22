@@ -6,7 +6,7 @@
 // { nodes: [{ id, type, name, x, y, config }], edges: [{ id, from, to, label, condition, isDefault }],
 //   variables: [{ name, defaultValue }] }
 
-export const NODE_TYPES = ['start', 'robot', 'agent', 'human', 'case', 'decision', 'parallel', 'join', 'timer', 'http', 'end'];
+export const NODE_TYPES = ['start', 'robot', 'agent', 'human', 'case', 'decision', 'parallel', 'join', 'inclusive', 'loop', 'race', 'timer', 'http', 'end'];
 export const OPERATORS = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'contains', 'empty', 'not_empty'];
 export const TRIGGERS = ['manual', 'schedule', 'webhook'];
 const NAME = /^[A-Za-z][A-Za-z0-9_]{0,62}$/;
@@ -129,7 +129,35 @@ export function validateDefinition(definition, lookups = null) {
       if (outs.length < 2) add(errors, `${label} needs at least two outgoing branches`, ref);
       continue;
     }
-    if (outs.length !== 1) add(errors, `${label} needs exactly one outgoing connection`, ref);
+    if (node.type === 'inclusive') {
+      if (outs.length < 2) add(errors, `${label} needs at least two outgoing branches`, ref);
+      const defaults = outs.filter((edge) => edge.isDefault);
+      if (defaults.length > 1) add(errors, `${label} can have only one default branch`, ref);
+      for (const edge of outs) {
+        if (edge.isDefault || !edge.condition) continue;
+        if (!OPERATORS.includes(edge.condition.op)) add(errors, `Branch condition operator must be one of ${OPERATORS.join(', ')}`, { nodeId: node.id, edgeId: edge.id });
+      }
+      continue;
+    }
+    if (node.type === 'loop') {
+      if (outs.length !== 2) add(errors, `${label} needs two connections: Repeat, and Done marked as the default`, ref);
+      const defaults = outs.filter((edge) => edge.isDefault);
+      if (defaults.length !== 1) add(errors, `${label} needs exactly one Done connection, marked as the default`, ref);
+      const max = Number(config.maxIterations);
+      if (!Number.isInteger(max) || max < 1 || max > 50) add(errors, `${label}: max iterations must be a whole number from 1 to 50`, ref);
+      if (config.condition?.left && !OPERATORS.includes(config.condition.op)) add(errors, `${label}: condition operator is not supported`, ref);
+      continue;
+    }
+    if (node.type === 'race') {
+      if (outs.length < 2) add(errors, `${label} needs at least two timer branches`, ref);
+      const delays = config.delays && typeof config.delays === 'object' ? config.delays : {};
+      for (const edge of outs) {
+        const seconds = Number(delays[edge.to]);
+        if (!Number.isFinite(seconds) || seconds < 1 || seconds > MAX_TIMER_SECONDS) add(errors, `${label}: each branch needs a wait from 1 second to 30 days`, { nodeId: node.id, edgeId: edge.id });
+      }
+      continue;
+    }
+    if (outs.length !== 1 && !(node.config?.boundary?.to && outs.length === 2)) add(errors, `${label} needs exactly one outgoing connection`, ref);
     if (node.type === 'join' && ins.length < 2) add(errors, `${label} needs at least two incoming branches`, ref);
     const outputVar = config.outputVar;
     if (outputVar !== undefined && outputVar !== '' && !NAME.test(String(outputVar))) add(errors, `${label}: output variable must start with a letter and use letters, digits, or _`, ref);
@@ -198,7 +226,7 @@ export function validateDefinition(definition, lookups = null) {
     }
   }
 
-  // Reachability from Start and cycle detection (loops are not supported yet).
+  // Reachability from Start. A cycle is allowed only when it comes back to a Loop step.
   if (starts.length === 1 && !errors.some((item) => item.message.includes('does not exist'))) {
     const seen = new Set();
     const stack = [starts[0].id];
@@ -212,19 +240,21 @@ export function validateDefinition(definition, lookups = null) {
       if (!seen.has(node.id)) add(errors, `${node.name || node.id} cannot be reached from Start`, { nodeId: node.id });
     }
     const state = new Map();
-    let cycle = null;
+    const bad = [];
     const visit = (id) => {
-      if (cycle) return;
       state.set(id, 1);
       for (const edge of outgoing.get(id) || []) {
         const mark = state.get(edge.to);
-        if (mark === 1) { cycle = edge; return; }
+        if (mark === 1) {
+          if (byId.get(edge.to)?.type !== 'loop') bad.push(edge);
+          continue;
+        }
         if (!mark) visit(edge.to);
       }
       state.set(id, 2);
     };
     for (const node of byId.values()) if (!state.get(node.id)) visit(node.id);
-    if (cycle) add(errors, 'Loops are not supported yet: remove the connection that goes back to an earlier step', { edgeId: cycle.id, nodeId: cycle.to });
+    for (const edge of bad) add(errors, 'Only a Loop step can be connected back to. Add a Loop, or remove the connection that goes back to an earlier step', { edgeId: edge.id, nodeId: edge.to });
   }
   return { errors, warnings };
 }

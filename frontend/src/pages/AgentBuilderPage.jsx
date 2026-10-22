@@ -22,6 +22,7 @@ export const TOOL_META = {
   task: { label: 'Ask a person', icon: 'human', tone: 'bg-[#F1EEFB] text-[#5B47B8]', body: 'Creates an Action Center task (human in the loop) and optionally waits for the decision.' },
   http: { label: 'Call an API', icon: 'api', tone: 'bg-slate-100 text-slate-700', body: 'Calls a project REST API connection. Credentials stay in the connection.' },
   query: { label: 'Look up project data', icon: 'database', tone: 'bg-[#E8F6F6] text-[#127C81]', body: 'Reads recent jobs, queue items, tasks, or workflows in this project.' },
+  code: { label: 'JavaScript', icon: 'code', tone: 'bg-slate-100 text-slate-700', body: 'Runs in a sandbox. The function receives args and returns JSON. No files, network, or secrets.' },
 };
 const RESOURCE_LABELS = { jobs: 'Jobs', queue_items: 'Queue items', tasks: 'Action Center tasks', workflows: 'Workflows' };
 const ROLE_LABELS = { administrator: 'Administrators', project_manager: 'Project managers', automation_developer: 'Automation developers', operator: 'Operators' };
@@ -94,7 +95,8 @@ function ToolEditor({ tool, lookups, disabled, onChange, onDelete, problems, ope
   const summary = tool.type === 'workflow' ? (workflow?.name || 'Choose a workflow')
     : tool.type === 'case' ? ((lookups.caseTypes || []).find((item) => item.id === tool.caseTypeId)?.name || 'Choose a case type')
     : tool.type === 'task' ? `${tool.wait === false ? 'Does not wait' : 'Waits for the answer'}${tool.assignedRole ? ` · ${ROLE_LABELS[tool.assignedRole]}` : ''}`
-      : tool.type === 'http' ? `${tool.method} ${tool.pathPrefix || '/'}…` : (tool.resources || []).map((item) => RESOURCE_LABELS[item]).join(', ');
+      : tool.type === 'http' ? `${tool.method} ${tool.pathPrefix || '/'}…`
+        : tool.type === 'code' ? 'Sandboxed JavaScript' : (tool.resources || []).map((item) => RESOURCE_LABELS[item]).join(', ');
   return (
     <div className={`rounded-xl border bg-white ${problems?.length ? 'border-[#F5C9C4]' : 'border-[#ECE8E3]'}`}>
       <div className="flex items-center gap-3 px-3.5 py-2.5">
@@ -172,6 +174,14 @@ function ToolEditor({ tool, lookups, disabled, onChange, onDelete, problems, ope
               <Field label="Allowed path prefix"><input className={`${input} font-mono`} disabled={disabled} value={tool.pathPrefix || '/'} onChange={(event) => set({ pathPrefix: event.target.value })} /></Field>
             </div>
           )}
+          {tool.type === 'code' && (
+            <>
+              <Field label="Script" hint="Body of async function (args). Return JSON. Call other code tools only from a coded agent's main script.">
+                <textarea rows={8} className={`${input} resize-y font-mono text-[12px]`} disabled={disabled} spellCheck={false} value={tool.source || ''} onChange={(event) => set({ source: event.target.value })} />
+              </Field>
+              <FieldListEditor fields={tool.inputs || []} disabled={disabled} onChange={(inputs) => set({ inputs })} addLabel="Add argument" empty="No arguments. The model can still call it with an empty object." />
+            </>
+          )}
           {tool.type === 'query' && (
             <fieldset>
               <legend className="mb-1.5 text-[12.5px] font-medium text-ink">May look up</legend>
@@ -194,8 +204,9 @@ function ToolEditor({ tool, lookups, disabled, onChange, onDelete, problems, ope
   );
 }
 
-function AddToolMenu({ onAdd }) {
+function AddToolMenu({ onAdd, types }) {
   const [open, setOpen] = useState(false);
+  const entries = Object.entries(TOOL_META).filter(([type]) => !types || types.includes(type));
   return (
     <div className="relative">
       <button type="button" className={secondaryBtn} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon name="plus" className="h-3.5 w-3.5" />Add tool</button>
@@ -203,7 +214,7 @@ function AddToolMenu({ onAdd }) {
         <>
           <button type="button" className="fixed inset-0 z-30 cursor-default" aria-hidden="true" tabIndex={-1} onClick={() => setOpen(false)} />
           <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-80 rounded-xl u-card p-1.5 shadow-[0_16px_40px_-16px_rgba(23,33,37,0.28)]">
-            {Object.entries(TOOL_META).map(([type, meta]) => (
+            {entries.map(([type, meta]) => (
               <button key={type} type="button" role="menuitem" className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left hover:bg-[#F6F4F1]" onClick={() => { setOpen(false); onAdd(type); }}>
                 <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-md ${meta.tone}`}><Icon name={meta.icon} className="h-3.5 w-3.5" /></span>
                 <span><span className="block text-[13px] font-semibold text-ink">{meta.label}</span><span className="block text-[12px] leading-4 text-slate-500">{meta.body}</span></span>
@@ -374,13 +385,14 @@ function TestPanel({ agent, config, aiStatus, canConfigure, onConfigured, ensure
     start({ input: values });
   }
 
-  if (!aiStatus) return <div className="p-5 text-[13px] text-slate-400">Checking the AI provider…</div>;
-  if (!aiStatus.configured) return <div className="overflow-y-auto p-4"><AiSetupCard projectId={agent.projectId} status={aiStatus} canConfigure={canConfigure} onConfigured={onConfigured} /></div>;
+  const coded = agent.agentType === 'coded';
+  if (!coded && !aiStatus) return <div className="p-5 text-[13px] text-slate-400">Checking the AI provider…</div>;
+  if (!coded && !aiStatus.configured) return <div className="overflow-y-auto p-4"><AiSetupCard projectId={agent.projectId} status={aiStatus} canConfigure={canConfigure} onConfigured={onConfigured} /></div>;
   const totals = run ? `${run.steps} step${run.steps === 1 ? '' : 's'} · ${run.totalTokens.toLocaleString()} tokens` : '';
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-[#F1EEEA] px-4 py-2">
-        <p className="min-w-0 truncate text-[12px] text-slate-500"><span className="inline-block h-1.5 w-1.5 rounded-full bg-[#2E9E57] align-middle" aria-hidden="true" /> <span className="font-medium text-ink">{aiStatus.active.providerLabel} · {aiStatus.active.model}</span>{aiStatus.active.source === 'env' ? ' (server default)' : ''}</p>
+        <p className="min-w-0 truncate text-[12px] text-slate-500"><span className="inline-block h-1.5 w-1.5 rounded-full bg-[#2E9E57] align-middle" aria-hidden="true" /> <span className="font-medium text-ink">{coded ? 'JavaScript sandbox' : `${aiStatus.active.providerLabel} · ${aiStatus.active.model}`}</span>{!coded && aiStatus.active.source === 'env' ? ' (server default)' : ''}</p>
         <div className="flex shrink-0 items-center gap-2">
           {run && <span className="text-[11.5px] tabular-nums text-slate-400">{totals}</span>}
           {run && <Link to={`/studio/agents/${agent.id}/runs/${run.id}`} className="text-[12px] font-semibold text-slate-600 hover:text-ember">Trace</Link>}
@@ -565,6 +577,7 @@ export default function AgentBuilderPage() {
   if (error && !agent) return <main id="app-main" className="p-10 text-[14px] text-danger">{error}</main>;
   if (!agent || !config) return <main id="app-main" className="p-10 text-[14px] text-slate-500">Loading agent…</main>;
   const chat = agent.agentType === 'conversational';
+  const coded = agent.agentType === 'coded';
   const disabled = !writable;
   const updateTool = (tool) => change({ tools: config.tools.map((item) => (item.id === tool.id ? tool : item)) });
 
@@ -574,7 +587,7 @@ export default function AgentBuilderPage() {
         <Link to="/studio?view=agents" className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-[#F6F4F1] hover:text-ink" aria-label="Back to agents"><Icon name="chevronRight" className="h-4 w-4 rotate-180" /></Link>
         <span className="u-tile grid h-8 w-8 place-items-center rounded-lg bg-[#EEF4FF] text-[#3550B5]"><Icon name="agent" className="h-4 w-4" /></span>
         <div className="min-w-0">
-          <p className="text-[11.5px] text-slate-500">{agent.projectName} · {chat ? 'Conversational agent' : 'Autonomous agent'}</p>
+          <p className="text-[11.5px] text-slate-500">{agent.projectName} · {chat ? 'Conversational agent' : coded ? 'Coded agent' : 'Autonomous agent'}</p>
           <input aria-label="Agent name" className="-ml-1 w-[280px] rounded-md border border-transparent bg-transparent px-1 text-[15px] font-semibold tracking-tight text-ink hover:border-[#ECE8E3] focus:border-ember focus:outline-none" disabled={disabled} value={name} onChange={(event) => setName(event.target.value)} onBlur={rename} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} />
         </div>
         <StatusPill status={agent.status} />
@@ -600,7 +613,16 @@ export default function AgentBuilderPage() {
               {chat && <Field className="mt-3" label="Greeting" hint="First message shown in a new chat (optional)."><input className={input} disabled={disabled} value={config.greeting || ''} onChange={(event) => change({ greeting: event.target.value })} /></Field>}
             </Section>
 
-            <Section title="Model" description="Which AI provider and model the agent uses, and the guardrails for each run.">
+            {coded && (
+              <Section title="Script" description="This runs instead of a model. async function (input, tools). Return a JSON object. tools.your_tool(args) calls a JavaScript tool. The process cannot read files, open the network, or see server secrets.">
+                <Field label="Main script" error={byField.source?.[0]}>
+                  <textarea rows={12} className={`${input} resize-y font-mono text-[12px]`} disabled={disabled} spellCheck={false} value={config.source || ''} onChange={(event) => change({ source: event.target.value })} />
+                </Field>
+              </Section>
+            )}
+
+            {!coded && (
+              <Section title="Model" description="Which AI provider and model the agent uses, and the guardrails for each run.">
               <div className="grid grid-cols-2 gap-4">
                 <Field label="AI provider" error={byField.connectionId?.[0]} hint={aiStatus?.configured ? `Default: ${aiStatus.active?.providerLabel} · ${aiStatus.active?.model}` : 'No provider yet: connect one in the Test panel.'}>
                   <select className={input} disabled={disabled} value={config.connectionId || ''} onChange={(event) => { change({ connectionId: event.target.value || null }); loadStatus(agent.projectId, event.target.value || null); }}>
@@ -619,13 +641,13 @@ export default function AgentBuilderPage() {
                 <Field label="Token budget per run" error={byField.maxTotalTokens?.[0]} hint="Stops the run when used up"><input type="number" min={1000} max={500000} step={1000} className={input} disabled={disabled} value={config.maxTotalTokens} onChange={(event) => change({ maxTotalTokens: Number(event.target.value) })} /></Field>
               </div>
               <Field className="mt-4 max-w-[260px]" label="Tool wait limit (minutes)" hint="How long to wait for a job or a person" error={byField.toolTimeoutMinutes?.[0]}><input type="number" min={1} max={10080} className={input} disabled={disabled} value={config.toolTimeoutMinutes} onChange={(event) => change({ toolTimeoutMinutes: Number(event.target.value) })} /></Field>
-            </Section>
+            </Section>)}
 
-            <Section title="Tools" description="Actions the agent may take. It decides when to call them; every call is recorded in the run trace." action={writable && <AddToolMenu onAdd={(type) => { const tool = newTool(type, config.tools); change({ tools: [...config.tools, tool] }); setOpenTool(tool.id); }} />}>
+            <Section title="Tools" description="Actions the agent may take. It decides when to call them; every call is recorded in the run trace." action={writable && <AddToolMenu types={coded ? ['code'] : null} onAdd={(type) => { const tool = newTool(type, config.tools); change({ tools: [...config.tools, tool] }); setOpenTool(tool.id); }} />}>
               {config.tools.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-[#E2DCD5] px-4 py-6 text-center">
                   <p className="text-[13px] font-medium text-ink">No tools yet</p>
-                  <p className="mx-auto mt-1 max-w-md text-[12.5px] leading-5 text-slate-500">Without tools the agent can only talk. Add a workflow it can run, a person it can ask, an API it can call, or project data it can look up.</p>
+                  <p className="mx-auto mt-1 max-w-md text-[12.5px] leading-5 text-slate-500">{coded ? 'The main script can run on its own. Add a JavaScript tool when the script should call tools.your_name(args).' : 'Without tools the agent can only talk. Add a workflow it can run, a person it can ask, an API it can call, or project data it can look up.'}</p>
                 </div>
               ) : (
                 <div className="space-y-2">{config.tools.map((tool) => <ToolEditor key={tool.id} tool={tool} lookups={lookups} disabled={disabled} problems={byField[`tools.${tool.id}`]} open={openTool === tool.id} onToggle={() => setOpenTool(openTool === tool.id ? null : tool.id)} onChange={updateTool} onDelete={() => change({ tools: config.tools.filter((item) => item.id !== tool.id) })} />)}</div>
@@ -641,7 +663,7 @@ export default function AgentBuilderPage() {
               <FieldListEditor fields={config.outputSchema} disabled={disabled} onChange={(outputSchema) => change({ outputSchema })} addLabel="Add output field" empty="No output fields: the final answer is returned as text." />
               <Problems items={byField.outputSchema} />
             </Section>
-            <p className="pb-4 text-center text-[11.5px] text-slate-400">Coded agents (your own JavaScript tools) are planned; they need a hardened sandbox first.</p>
+            <p className="pb-4 text-center text-[11.5px] text-slate-400">{coded ? 'The script and JavaScript tools run in a sandbox with no files, network, or secrets.' : 'JavaScript tools run in the same sandbox as coded agents.'}</p>
           </div>
         </div>
 
