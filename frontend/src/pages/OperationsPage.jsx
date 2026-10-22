@@ -15,7 +15,7 @@ const CONNECTION_HINTS = {
   rest_api: '{ "baseUrl": "https://api.example.com", "healthPath": "/health" }',
   mysql: '{ "host": "127.0.0.1", "port": 3306, "database": "erp", "user": "reader", "allowedTables": ["orders"] }',
   file_storage: '{ "rootRelative": "shared" }',
-  email: '{ "host": "smtp.example.com", "port": 587, "from": "robot@example.com" }',
+  email: '{ "host": "smtp.sendgrid.net", "port": 587, "from": "verified-sender@yourdomain.com" }',
   browser_uipath: '{ "applicationName": "Portal", "startUrl": "https://portal.example.com" }',
   postgres: '{ "host": "127.0.0.1", "port": 5432, "database": "erp", "user": "reader", "allowedTables": ["orders"], "allowCustomQueries": false, "readOnly": true }',
   google_sheets: '{ "spreadsheetId": "1AbC…from the sheet URL" }',
@@ -25,7 +25,7 @@ const SECRET_HINTS = {
   rest_api: '{ "token": "…" } or { "username": "…", "password": "…" } or { "apiKey": "…" }',
   mysql: '{ "password": "…" }',
   postgres: '{ "password": "…" }',
-  email: '{ "user": "…", "password": "…" }',
+  email: '{ "user": "apikey", "password": "sendgrid-api-key" } or { "user": "mailbox@example.com", "password": "smtp-password" }',
   google_sheets: 'Paste the service account key JSON (client_email, private_key, token_uri)',
   credential: '{ "username": "…", "password": "…" }',
 };

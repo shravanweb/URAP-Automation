@@ -70,6 +70,15 @@ describe('pages render for a signed-in administrator', () => {
     const sheets = renderToStaticMarkup(<PropertyPanel step={{ id: 's1', type: 'sheets_read_range', config: {} }} connections={connections} onConfig={() => {}} />);
     expect(sheets).toContain('Sheet (google_sheets)');
     expect(renderToStaticMarkup(<PropertyPanel step={{ id: 'x', type: 'start', config: {} }} onConfig={() => {}} />)).toBe('');
+    const mailbox = [{ id: 'e1', name: 'SendGrid', connectorType: 'email' }, { id: 'c2', name: 'Sheet', connectorType: 'google_sheets' }];
+    const email = renderToStaticMarkup(<PropertyPanel step={{ id: 'n1', type: 'send_notification', config: { channel: 'email', subject: 'Invoice created' } }} connections={mailbox} onConfig={() => {}} />);
+    expect(email).toContain('SendGrid (email)');
+    expect(email).toContain('To');
+    expect(email).toContain('Attachments');
+    expect(email).not.toContain('Sheet (google_sheets)');
+    const inApp = renderToStaticMarkup(<PropertyPanel step={{ id: 'n2', type: 'send_notification', config: { channel: 'in_app', subject: 'Hi' } }} connections={mailbox} onConfig={() => {}} />);
+    expect(inApp).toContain('Subject');
+    expect(inApp).not.toContain('SendGrid (email)');
   });
 
   it('prefills task forms from defaults and task data', () => {

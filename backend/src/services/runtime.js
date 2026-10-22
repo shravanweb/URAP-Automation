@@ -16,6 +16,43 @@ import { createTask, getTaskForJob, taskResult } from './taskService.js';
 import { pingProvider, resolveProvider } from '../agent/providers.js';
 
 const BLOCKED_HEADERS = new Set(['host', 'content-length', 'connection', 'transfer-encoding', 'cookie', 'te', 'upgrade', 'proxy-authorization']);
+const MAX_ATTACHMENTS = 10;
+
+export function attachmentEntries(value) {
+  if (value == null || value === '') return [];
+  const items = Array.isArray(value) ? value : [value];
+  return items.flatMap((item) => String(item).split(',')).map((item) => item.trim()).filter(Boolean);
+}
+
+/** Plain-text mail plus optional HTML and files stored under the project. Paths cannot leave that folder. */
+export async function buildOutgoingMail(config, storageRoot) {
+  const to = String(config.to || '').trim();
+  if (!to) throw new AppError(400, 'VALIDATION', 'Email recipient (to) is required');
+  const paths = attachmentEntries(config.attachments);
+  if (paths.length > MAX_ATTACHMENTS) throw new AppError(400, 'VALIDATION', `At most ${MAX_ATTACHMENTS} attachments`);
+  const attachments = [];
+  for (const relative of paths) {
+    const file = resolveInside(storageRoot, relative);
+    try {
+      await fs.access(file);
+    } catch {
+      throw new AppError(400, 'FILE_NOT_FOUND', `Attachment was not found: ${relative}`);
+    }
+    attachments.push({ filename: path.basename(file), path: file });
+  }
+  const mail = {
+    to,
+    subject: String(config.subject || 'Automation notification'),
+    text: String(config.message || ''),
+    attachments,
+  };
+  const cc = String(config.cc || '').trim();
+  const bcc = String(config.bcc || '').trim();
+  if (cc) mail.cc = cc;
+  if (bcc) mail.bcc = bcc;
+  if (config.html) mail.html = String(config.html);
+  return mail;
+}
 
 /**
  * Runtime pieces that do not need the platform database: browser, desktop, and OCR. The worker
@@ -210,19 +247,16 @@ export function createRuntime(pool, cfg, job, overrides = {}) {
     async notify(config) {
       if (config.channel === 'email') {
         const connection = await loadConnection(pool, job, config.connectionId, cfg.credentialsKey);
+        if (connection.connector_type !== 'email') throw new AppError(400, 'WRONG_CONNECTOR', 'Email steps require an email connection');
         const transport = nodemailer.createTransport({
           host: connection.config.host,
           port: Number(connection.config.port || 587),
           secure: Boolean(connection.config.secure),
           auth: connection.secret.user ? { user: connection.secret.user, pass: connection.secret.password } : undefined,
         });
-        const info = await transport.sendMail({
-          from: connection.config.from,
-          to: config.to,
-          subject: String(config.subject || 'Automation notification'),
-          text: String(config.message || ''),
-        });
-        return { channel: 'email', messageId: info.messageId };
+        const mail = await buildOutgoingMail(config, storageRoot);
+        const info = await transport.sendMail({ ...mail, from: connection.config.from });
+        return { channel: 'email', messageId: info.messageId, attachmentCount: mail.attachments.length };
       }
       const id = cryptoRandom();
       await pool.query(

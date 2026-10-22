@@ -113,6 +113,11 @@ function validateStepConfig(step, ids, errors, options) {
   if (['http_request', 'database_query', 'file_operation', 'send_notification'].includes(step.type)) {
     if (step.type !== 'send_notification' || config.channel === 'email') need('connectionId');
   }
+  if (step.type === 'send_notification' && config.channel === 'email') {
+    need('to');
+    const attachments = Array.isArray(config.attachments) ? config.attachments : (config.attachments ? [config.attachments] : []);
+    if (attachments.length > 10) push(errors, `${step.id}.config.attachments`, 'At most 10 attachments');
+  }
   if (step.type === 'browser_ui_action' || step.type === 'uipath_workflow') need('task');
   if (step.type === 'if_else') {
     need('operator');

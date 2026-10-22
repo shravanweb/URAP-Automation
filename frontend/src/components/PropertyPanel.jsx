@@ -60,9 +60,9 @@ function DesktopSelectorField({ value, onChange }) {
 
 /** Form for the selected activity. Changes go straight into step.config. */
 export default function PropertyPanel({ step, connections = [], picks = [], onConfig }) {
-  const fields = fieldsFor(step.type);
-  if (!fields || !fields.length) return null;
   const config = step.config || {};
+  const fields = (fieldsFor(step.type) || []).filter((field) => !field.when || field.when(config));
+  if (!fields.length) return null;
   const set = (key, value) => onConfig(setConfigValue(config, key, value));
   return (
     <div className="mt-3 space-y-2" data-testid="property-panel">

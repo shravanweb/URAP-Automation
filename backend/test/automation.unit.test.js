@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -23,6 +24,7 @@ import { normalizeFormSchema, validateFormData, canCompleteTask } from '../src/s
 import { packageNeedsExecution, unsupportedSteps } from '../src/robot/robotRuntime.js';
 import { validateDefinition } from '../src/workflow/validate.js';
 import { executeWorkflow } from '../src/workflow/engine.js';
+import { buildOutgoingMail } from '../src/services/runtime.js';
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const INVOICE_TEXT = fs.readFileSync(path.join(fixtures, 'make-fixtures.mjs'), 'utf8').match(/INVOICE_LINES = \[([\s\S]*?)\];/)[1]
@@ -346,5 +348,40 @@ describe('Action Center rules and robot packages', () => {
     ]));
     const paths = errors.map((error) => error.path);
     expect(paths).toEqual(expect.arrayContaining(['open.config.url', 'click.config.selector', 'key.config.keys', 'ocr.config.path', 'task.config.title', 'task.config.taskType']));
+  });
+
+  it('requires a recipient when a notification sends email', () => {
+    const { errors } = validateDefinition(wf([
+      { id: 'start', type: 'start', name: 'Start', next: 'mail' },
+      { id: 'mail', type: 'send_notification', name: 'Mail', config: { channel: 'email', connectionId: '00000000-0000-4000-8000-000000000099' }, next: 'end' },
+      { id: 'end', type: 'end', name: 'End' },
+    ]));
+    expect(errors.map((error) => error.path)).toContain('mail.config.to');
+  });
+});
+
+describe('outgoing email', () => {
+  it('includes cc, html, and a project file, and refuses a path outside storage', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'urap-mail-'));
+    fs.mkdirSync(path.join(root, 'uploads'));
+    fs.writeFileSync(path.join(root, 'uploads', 'invoice.pdf'), 'pdf');
+    const mail = await buildOutgoingMail({
+      to: 'finance@company.com',
+      cc: 'boss@company.com',
+      subject: 'Invoice INV-1001',
+      message: 'Created',
+      html: '<p>Created</p>',
+      attachments: 'uploads/invoice.pdf',
+    }, root);
+    expect(mail).toMatchObject({
+      to: 'finance@company.com',
+      cc: 'boss@company.com',
+      subject: 'Invoice INV-1001',
+      text: 'Created',
+      html: '<p>Created</p>',
+    });
+    expect(mail.attachments).toEqual([{ filename: 'invoice.pdf', path: path.join(root, 'uploads', 'invoice.pdf') }]);
+    await expect(buildOutgoingMail({ to: 'a@b.co', attachments: '../secret.txt' }, root)).rejects.toThrow(/escapes/);
+    fs.rmSync(root, { recursive: true, force: true });
   });
 });
