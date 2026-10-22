@@ -838,7 +838,7 @@ export default function LandingPage() {
           <div className="absolute inset-y-0 left-0 w-[42%] bg-gradient-to-r from-[#fff4e8]/70 to-transparent" />
           <div className="relative z-10 flex min-h-[820px] items-start px-5 pt-52 sm:px-8 sm:pt-64 lg:px-10 lg:pt-[17rem]">
             <div className="max-w-3xl">
-              <h1 aria-label="Your clear path to automation results" className="text-5xl font-extrabold leading-[0.98] tracking-[-0.03em] sm:text-6xl lg:text-[68px]">
+              <h1 aria-label="Your clear path to automation results" className="text-5xl font-extrabold leading-[1.12] tracking-[-0.03em] sm:text-6xl lg:text-[68px]">
                 {[['Your', 'clear', 'path'], ['to', 'automation', 'results']].map((line, l) => (
                   <span key={l} aria-hidden="true" className={`block ${l === 0 ? 'whitespace-nowrap' : 'sm:whitespace-nowrap'}`}>
                     {line.map((word, w) => <span key={word} data-hero-word className="inline-block will-change-[opacity]">{word}{w < line.length - 1 ? '\u00a0' : ''}</span>)}
