@@ -113,11 +113,6 @@ function validateStepConfig(step, ids, errors, options) {
   if (['http_request', 'database_query', 'file_operation', 'send_notification'].includes(step.type)) {
     if (step.type !== 'send_notification' || config.channel === 'email') need('connectionId');
   }
-  if (step.type === 'send_notification' && config.channel === 'email') {
-    need('to');
-    const attachments = Array.isArray(config.attachments) ? config.attachments : (config.attachments ? [config.attachments] : []);
-    if (attachments.length > 10) push(errors, `${step.id}.config.attachments`, 'At most 10 attachments');
-  }
   if (step.type === 'browser_ui_action' || step.type === 'uipath_workflow') need('task');
   if (step.type === 'if_else') {
     need('operator');
@@ -234,7 +229,7 @@ function validateStepConfig(step, ids, errors, options) {
   if (options.connectionIds && config.connectionId && !options.connectionIds.has(config.connectionId)) {
     push(errors, `${step.id}.config.connectionId`, 'Connection does not belong to this project');
   }
-  if (['browser_type', 'desktop_type'].includes(step.type) && config.credentialId) {
+  if (['browser_type', 'desktop_type', 'browser_flutter_attendance'].includes(step.type) && config.credentialId) {
     if (config.credentialField !== undefined && !/^[A-Za-z_][A-Za-z0-9_]{0,40}$/.test(String(config.credentialField))) push(errors, `${step.id}.config.credentialField`, 'credentialField must be a field name such as password');
     if (!hasTemplate(config.credentialId) && options.connectionIds && !options.connectionIds.has(config.credentialId)) push(errors, `${step.id}.config.credentialId`, 'Credential does not belong to this project');
     else if (!hasTemplate(config.credentialId) && options.connectionTypes?.get(config.credentialId) && options.connectionTypes.get(config.credentialId) !== 'credential') push(errors, `${step.id}.config.credentialId`, 'Choose a Credential connection');
@@ -283,10 +278,16 @@ function validateWebStep(step, config, need, errors) {
     checkUrlValue(step, config, errors);
   }
   if (['browser_click', 'browser_type', 'browser_get_text', 'browser_wait_for', 'browser_select_option', 'browser_extract_table'].includes(step.type)) checkSelector(step, config, errors);
-  if (config.selectorType === 'image' && step.type !== 'browser_click') push(errors, `${step.id}.config.selectorType`, 'Image targeting is only available on Click');
-  if (config.selectorType === 'image' && badPath(config.selector)) push(errors, `${step.id}.config.selector`, 'The template image path must be relative to project storage and cannot contain ..');
   if (step.type === 'browser_screenshot' && config.selector) checkSelector(step, config, errors);
   if (step.type === 'browser_type' && (config.text === undefined || config.text === '') && !config.credentialId && !config.key && !config.pressEnter) push(errors, `${step.id}.config.text`, 'text, a credential, or key is required');
+  if (step.type === 'browser_flutter_attendance') {
+    const phase = config.phase || 'all';
+    if (!['all', 'login', 'attendance', 'punch', 'verify'].includes(phase)) push(errors, `${step.id}.config.phase`, 'phase must be all, login, attendance, punch, or verify');
+    if (['all', 'login'].includes(phase)) { need('email'); need('credentialId'); }
+    if (['all', 'punch', 'verify'].includes(phase) && !['in', 'out'].includes(config.action) && !hasTemplate(config.action)) push(errors, `${step.id}.config.action`, 'action must be in or out');
+    checkUrlValue(step, config, errors);
+    if (config.screenshotFolder && badPath(config.screenshotFolder)) push(errors, `${step.id}.config.screenshotFolder`, 'File paths must be relative to project storage and cannot contain ..');
+  }
   if (step.type === 'browser_wait_for' && config.state && !['visible', 'hidden', 'attached', 'detached'].includes(config.state)) push(errors, `${step.id}.config.state`, 'state must be visible, hidden, attached, or detached');
   if (step.type === 'browser_select_option' && [config.value, config.label, config.optionIndex].every((value) => value === undefined || value === '')) push(errors, `${step.id}.config.value`, 'value, label, or optionIndex is required');
   if (step.type === 'browser_extract_table') {

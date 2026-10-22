@@ -16,43 +16,6 @@ import { createTask, getTaskForJob, taskResult } from './taskService.js';
 import { pingProvider, resolveProvider } from '../agent/providers.js';
 
 const BLOCKED_HEADERS = new Set(['host', 'content-length', 'connection', 'transfer-encoding', 'cookie', 'te', 'upgrade', 'proxy-authorization']);
-const MAX_ATTACHMENTS = 10;
-
-export function attachmentEntries(value) {
-  if (value == null || value === '') return [];
-  const items = Array.isArray(value) ? value : [value];
-  return items.flatMap((item) => String(item).split(',')).map((item) => item.trim()).filter(Boolean);
-}
-
-/** Plain-text mail plus optional HTML and files stored under the project. Paths cannot leave that folder. */
-export async function buildOutgoingMail(config, storageRoot) {
-  const to = String(config.to || '').trim();
-  if (!to) throw new AppError(400, 'VALIDATION', 'Email recipient (to) is required');
-  const paths = attachmentEntries(config.attachments);
-  if (paths.length > MAX_ATTACHMENTS) throw new AppError(400, 'VALIDATION', `At most ${MAX_ATTACHMENTS} attachments`);
-  const attachments = [];
-  for (const relative of paths) {
-    const file = resolveInside(storageRoot, relative);
-    try {
-      await fs.access(file);
-    } catch {
-      throw new AppError(400, 'FILE_NOT_FOUND', `Attachment was not found: ${relative}`);
-    }
-    attachments.push({ filename: path.basename(file), path: file });
-  }
-  const mail = {
-    to,
-    subject: String(config.subject || 'Automation notification'),
-    text: String(config.message || ''),
-    attachments,
-  };
-  const cc = String(config.cc || '').trim();
-  const bcc = String(config.bcc || '').trim();
-  if (cc) mail.cc = cc;
-  if (bcc) mail.bcc = bcc;
-  if (config.html) mail.html = String(config.html);
-  return mail;
-}
 
 /**
  * Runtime pieces that do not need the platform database: browser, desktop, and OCR. The worker
@@ -111,10 +74,22 @@ export function createRuntime(pool, cfg, job, overrides = {}) {
     if (value === undefined || value === null) throw new AppError(400, 'CREDENTIAL_FIELD_MISSING', `The credential has no ${field} value`);
     return { ...config, text: String(value) };
   }
+  // The attendance step needs the password itself. An empty credential fails with the step's
+  // own message (for example "Set REWAHR_PASSWORD in Settings") before a browser action runs.
+  async function withPassword(config) {
+    const missing = config.missingCredentialMessage || 'Set the password credential in Settings';
+    if (!config.credentialId) throw new AppError(400, 'CREDENTIAL_MISSING', missing);
+    const connection = await loadConnection(pool, job, config.credentialId, cfg.credentialsKey);
+    if (connection.connector_type !== 'credential') throw new AppError(400, 'WRONG_CONNECTOR', 'credentialId must be a Credential connection');
+    const value = connection.secret?.[config.credentialField || 'password'];
+    if (value === undefined || value === null || String(value) === '') throw new AppError(400, 'CREDENTIAL_MISSING', missing);
+    return { ...config, password: String(value) };
+  }
   return {
     storageRoot,
     ...automation,
     async web(type, config) {
+      if (type === 'browser_flutter_attendance') return automation.web(type, ['all', 'login', undefined, ''].includes(config.phase) ? await withPassword(config) : config);
       return automation.web(type, type === 'browser_type' ? await withCredential(config) : config);
     },
     async desktop(type, config) {
@@ -247,16 +222,19 @@ export function createRuntime(pool, cfg, job, overrides = {}) {
     async notify(config) {
       if (config.channel === 'email') {
         const connection = await loadConnection(pool, job, config.connectionId, cfg.credentialsKey);
-        if (connection.connector_type !== 'email') throw new AppError(400, 'WRONG_CONNECTOR', 'Email steps require an email connection');
         const transport = nodemailer.createTransport({
           host: connection.config.host,
           port: Number(connection.config.port || 587),
           secure: Boolean(connection.config.secure),
           auth: connection.secret.user ? { user: connection.secret.user, pass: connection.secret.password } : undefined,
         });
-        const mail = await buildOutgoingMail(config, storageRoot);
-        const info = await transport.sendMail({ ...mail, from: connection.config.from });
-        return { channel: 'email', messageId: info.messageId, attachmentCount: mail.attachments.length };
+        const info = await transport.sendMail({
+          from: connection.config.from,
+          to: config.to,
+          subject: String(config.subject || 'Automation notification'),
+          text: String(config.message || ''),
+        });
+        return { channel: 'email', messageId: info.messageId };
       }
       const id = cryptoRandom();
       await pool.query(

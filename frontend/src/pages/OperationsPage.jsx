@@ -7,6 +7,7 @@ import { SkeletonRows } from '../components/Loader.jsx';
 import AuditLog from '../components/AuditLog.jsx';
 import ReportsDashboard from '../components/ReportsDashboard.jsx';
 import SettingsTabs from '../components/SettingsTabs.jsx';
+import ConnectorCatalog from '../components/ConnectorCatalog.jsx';
 
 const ACTIVE = ['QUEUED', 'CLAIMED', 'RUNNING', 'RETRY_WAIT', 'CANCEL_REQUESTED', 'SUSPENDED'];
 const JOB_STATUSES = ['QUEUED', 'CLAIMED', 'RUNNING', 'SUSPENDED', 'SUCCEEDED', 'FAILED', 'RETRY_WAIT', 'CANCEL_REQUESTED', 'CANCELLED', 'SKIPPED'];
@@ -15,7 +16,7 @@ const CONNECTION_HINTS = {
   rest_api: '{ "baseUrl": "https://api.example.com", "healthPath": "/health" }',
   mysql: '{ "host": "127.0.0.1", "port": 3306, "database": "erp", "user": "reader", "allowedTables": ["orders"] }',
   file_storage: '{ "rootRelative": "shared" }',
-  email: '{ "host": "smtp.sendgrid.net", "port": 587, "from": "verified-sender@yourdomain.com" }',
+  email: '{ "host": "smtp.example.com", "port": 587, "from": "robot@example.com" }',
   browser_uipath: '{ "applicationName": "Portal", "startUrl": "https://portal.example.com" }',
   postgres: '{ "host": "127.0.0.1", "port": 5432, "database": "erp", "user": "reader", "allowedTables": ["orders"], "allowCustomQueries": false, "readOnly": true }',
   google_sheets: '{ "spreadsheetId": "1AbC…from the sheet URL" }',
@@ -25,7 +26,7 @@ const SECRET_HINTS = {
   rest_api: '{ "token": "…" } or { "username": "…", "password": "…" } or { "apiKey": "…" }',
   mysql: '{ "password": "…" }',
   postgres: '{ "password": "…" }',
-  email: '{ "user": "apikey", "password": "sendgrid-api-key" } or { "user": "mailbox@example.com", "password": "smtp-password" }',
+  email: '{ "user": "…", "password": "…" }',
   google_sheets: 'Paste the service account key JSON (client_email, private_key, token_uri)',
   credential: '{ "username": "…", "password": "…" }',
 };
@@ -59,7 +60,7 @@ function Connections() {
     <>
       <ErrorText>{error}</ErrorText>
       {write && (
-        <form className="grid gap-2 md:grid-cols-4" onSubmit={async (event) => {
+        <form id="connection-form" className="grid gap-2 md:grid-cols-4" onSubmit={async (event) => {
           event.preventDefault();
           try {
             await api(`/api/projects/${form.projectId}/connections`, { method: 'POST', body: { connectorType: form.connectorType, name: form.name, config: JSON.parse(form.config || '{}'), secret: form.secret ? JSON.parse(form.secret) : undefined } });
@@ -75,18 +76,47 @@ function Connections() {
           <textarea className={`${inputClass} font-mono md:col-span-2`} rows="3" placeholder={SECRET_HINTS[form.connectorType] ? `Secret JSON, stored encrypted: ${SECRET_HINTS[form.connectorType]}` : 'Secret JSON, stored encrypted, e.g. { "token": "..." } or { "password": "..." }'} value={form.secret || ''} onChange={(event) => setForm({ ...form, secret: event.target.value })} />
         </form>
       )}
-      <details className="rounded-lg border border-line bg-white p-3 text-sm"><summary className="cursor-pointer font-medium">Connector catalog ({data.connectors.length})</summary>
-        <ul className="mt-2 space-y-1">{data.connectors.map((item) => <li key={item.id}><span className="font-mono">{item.id}</span> · {item.displayName} · {item.description} · <StatusBadge status={item.availability} /></li>)}</ul>
-      </details>
+      <ConnectorCatalog connectors={data.connectors} canAdd={write} onUse={(connectorType) => {
+        setForm((current) => ({ ...current, connectorType }));
+        const form = document.getElementById('connection-form');
+        form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        form?.querySelector('input[placeholder="Name"]')?.focus({ preventScroll: true });
+      }} />
       {data.connections.length === 0 ? <EmptyState title="No connections" body="Add a connector configuration for a project. Secrets are not shown again after saving." /> : (
         <ul className="divide-y divide-line rounded-lg border border-line bg-white">{data.connections.map((row) => (
           <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
             <span>{row.projectName} · <span className="font-medium">{row.name}</span> · {row.connectorType} · secret {row.hasSecret ? 'stored' : 'none'} <StatusBadge status={row.status} />{row.lastError && <span className="block text-danger">{row.lastError}</span>}<span className="block font-mono text-xs text-muted">id {row.id}</span></span>
+            {write && row.connectorType === 'credential' && <SetPassword row={row} onSaved={reload} onError={setError} />}
             {write && <button className={quietClass} type="button" onClick={async () => { try { const result = await api(`/api/connections/${row.id}/test`, { method: 'POST' }); setError(result.data.error || ''); await reload(); } catch (err) { setError(err.message); } }}>Test</button>}
           </li>
         ))}</ul>
       )}
     </>
+  );
+}
+
+// Enter or replace the password of a Credential connection (for example REWAHR_PASSWORD).
+// The value goes straight to the API, is stored encrypted, and is never shown again.
+export function SetPassword({ row, onSaved, onError }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (!open) return <button className={quietClass} type="button" onClick={() => setOpen(true)}>{row.hasSecret ? 'Change password' : 'Set password'}</button>;
+  return (
+    <form className="flex items-center gap-2" onSubmit={async (event) => {
+      event.preventDefault();
+      if (!value) return;
+      setBusy(true);
+      try {
+        await api(`/api/connections/${row.id}/secret`, { method: 'PUT', body: { secret: { ...(row.config?.username ? { username: row.config.username } : {}), password: value } } });
+        setValue(''); setOpen(false); onError?.('');
+        await onSaved?.();
+      } catch (err) { onError?.(err.message); } finally { setBusy(false); }
+    }}>
+      <input className={inputClass} type="password" autoComplete="new-password" aria-label={`Password for ${row.name}`} placeholder={`Password for ${row.name}`} value={value} onChange={(event) => setValue(event.target.value)} autoFocus />
+      <button className={buttonClass} type="submit" disabled={busy || !value}>Save</button>
+      <button className={quietClass} type="button" onClick={() => { setValue(''); setOpen(false); }}>Cancel</button>
+    </form>
   );
 }
 

@@ -41,7 +41,6 @@ import { registerInsightsRoutes } from './insightsRoutes.js';
 import { registerPlatformRoutes } from './platformRoutes.js';
 import { requestContextMiddleware } from '../lib/requestContext.js';
 import { kickAgentRun } from '../agent/runtime.js';
-import { applyPasswordReset, emailConfigured, requestPasswordReset } from '../services/passwordResetMail.js';
 import { PROVIDERS } from '../agent/providers.js';
 import { advanceRun } from '../flow/engine.js';
 import { notifyCase } from '../case/engine.js';
@@ -344,26 +343,8 @@ export function createApp(options = {}) {
 
   // Public settings the sign-in and sign-up pages need before anyone is signed in.
   app.get('/api/auth/options', (_req, res) => {
-    res.json({ data: { allowSignup: cfg.allowSignup !== false, passwordReset: emailConfigured(cfg) ? 'email' : 'administrator', passwordMinLength: 12 } });
+    res.json({ data: { allowSignup: cfg.allowSignup !== false, passwordReset: 'administrator', passwordMinLength: 12 } });
   });
-
-  app.post('/api/auth/forgot-password', authLimit, wrap(async (req, res) => {
-    const body = z.object({ email: z.string().trim().email() }).safeParse(req.body);
-    if (!body.success) throw validationError(body.error.issues);
-    const configured = emailConfigured(cfg);
-    if (configured) await requestPasswordReset(pool, cfg, body.data.email.toLowerCase()).catch(() => {});
-    res.json({ data: { accepted: true, emailConfigured: configured } });
-  }));
-
-  app.post('/api/auth/reset-password', authLimit, wrap(async (req, res) => {
-    const body = z.object({
-      token: z.string().min(20, 'This reset link is invalid or has expired. Request a new one.').max(200),
-      password: z.string().min(12).max(200).refine((value) => /[A-Za-z]/.test(value) && /\d/.test(value), 'Password must contain letters and numbers'),
-    }).safeParse(req.body);
-    if (!body.success) throw validationError(body.error.issues);
-    const result = await applyPasswordReset(pool, cfg, body.data.token, body.data.password);
-    res.json({ data: { reset: true, email: result.email } });
-  }));
 
   app.post('/api/auth/signup', signupLimit, wrap(async (req, res) => {
     if (cfg.allowSignup === false) {
@@ -759,6 +740,25 @@ export function createApp(options = {}) {
     await loadProject(req.user, rows[0].project_id);
     const result = await testConnection(pool, cfg, rows[0]);
     res.json({ data: result });
+  }));
+
+  // Replace a connection's secret (for example the password of a Credential). The value is
+  // stored encrypted and is never returned, logged, or written to the audit log.
+  app.put('/api/connections/:id/secret', requireUser, requirePermission('connections.write'), wrap(async (req, res) => {
+    const [rows] = await pool.query(`SELECT * FROM connections WHERE id = ? AND tenant_id = ?`, [req.params.id, req.user.tenant_id]);
+    if (!rows[0]) throw new AppError(404, 'NOT_FOUND', 'Connection not found');
+    await loadProject(req.user, rows[0].project_id, true);
+    const body = z.object({ secret: z.record(z.any()) }).strict().safeParse(req.body);
+    if (!body.success) throw validationError(body.error.issues);
+    if (rows[0].connector_type === 'credential' && !String(body.data.secret.password ?? '').length) throw validationError([{ path: 'secret.password', message: 'Enter the password' }]);
+    const secret = encryptJson(body.data.secret, cfg.credentialsKey);
+    await pool.query(
+      `UPDATE connections SET secret_ciphertext = ?, secret_iv = ?, secret_tag = ?, status = 'untested', last_error = NULL, updated_at = UTC_TIMESTAMP(3) WHERE id = ?`,
+      [secret.ciphertext, secret.iv, secret.tag, rows[0].id],
+    );
+    await writeAudit(pool, { tenantId: req.user.tenant_id, userId: req.user.id, action: 'connection.secret_update', entityType: 'connection', entityId: rows[0].id, projectId: rows[0].project_id, metadata: { fields: Object.keys(body.data.secret) }, ip: req.ip });
+    const [fresh] = await pool.query(`SELECT * FROM connections WHERE id = ?`, [rows[0].id]);
+    res.json({ data: presentConnection(fresh[0]) });
   }));
 
   app.get('/api/workflows', requireUser, wrap(async (req, res) => {

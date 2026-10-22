@@ -14,6 +14,8 @@ export const SERVER_ONLY_STEPS = new Set([
   'http_request', 'database_query', 'file_operation', 'browser_ui_action', 'uipath_workflow',
   'add_queue_item', 'get_queue_item', 'set_queue_item_status', 'send_notification', 'call_subworkflow',
   'create_task', 'wait_for_task', 'sheets_read_range', 'sheets_append_rows', 'sheets_update_range',
+  // Reads the password from a Credential connection, which only the server worker can decrypt.
+  'browser_flutter_attendance',
 ]);
 
 /** True when the definition has real steps; start → end only keeps the old report-file contract. */

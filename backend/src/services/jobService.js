@@ -174,12 +174,17 @@ export function mimeFor(file) {
   return 'application/octet-stream';
 }
 
-async function persistArtifacts(pool, cfg, job, attemptId, stepOutputs) {
+async function persistArtifacts(pool, cfg, job, attemptId, stepOutputs, { extraPaths = [], tolerant = false } = {}) {
   const storageRoot = path.join(cfg.storageRoot, job.tenant_id, job.project_id);
-  for (const output of Object.values(stepOutputs || {})) {
-    if (!output?.path || output.artifactId) continue;
-    const absolute = resolveInside(storageRoot, output.path);
-    const data = await fs.readFile(absolute);
+  const save = async (relative) => {
+    const absolute = resolveInside(storageRoot, relative);
+    let data;
+    try {
+      data = await fs.readFile(absolute);
+    } catch (error) {
+      if (tolerant) return null;
+      throw error;
+    }
     const id = crypto.randomUUID();
     await pool.query(
       `INSERT INTO artifacts (
@@ -187,13 +192,29 @@ async function persistArtifacts(pool, cfg, job, attemptId, stepOutputs) {
         size_bytes, checksum_sha256, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
       [
-        id, job.tenant_id, job.project_id, job.id, attemptId, path.basename(output.path),
-        output.path, mimeFor(output.path),
+        id, job.tenant_id, job.project_id, job.id, attemptId, path.basename(relative),
+        relative, mimeFor(relative),
         data.length, sha256(data),
       ],
     );
-    output.artifactId = id;
+    return id;
+  };
+  for (const output of Object.values(stepOutputs || {})) {
+    if (!output || typeof output !== 'object') continue;
+    if (output.path && !output.artifactId) {
+      const id = await save(output.path);
+      if (id) output.artifactId = id;
+    }
+    // Steps that save several files (the attendance punch screenshots) list them in artifacts.
+    if (Array.isArray(output.artifacts) && !output.artifactIds) {
+      output.artifactIds = [];
+      for (const relative of output.artifacts) {
+        const id = await save(relative);
+        if (id) output.artifactIds.push(id);
+      }
+    }
   }
+  for (const relative of extraPaths) await save(relative);
 }
 
 export async function processClaimedJob(pool, cfg, claimed, overrides = {}) {
@@ -228,6 +249,9 @@ export async function processClaimedJob(pool, cfg, claimed, overrides = {}) {
   }, 0, resume ? { steps: resume.steps, stepId: resume.stepId, output: resume.output } : null).finally(() => runtime.dispose());
   if (result.status === 'SUCCEEDED' || result.status === 'SUSPENDED') {
     await persistArtifacts(pool, cfg, job, attemptId, result.steps);
+  } else if (result.status === 'FAILED') {
+    // Keep what the failed run produced (screenshots up to and at the failure) for debugging.
+    await persistArtifacts(pool, cfg, job, attemptId, result.steps, { extraPaths: result.error?.screenshots || [], tolerant: true }).catch(() => {});
   }
   if (result.status === 'SUSPENDED') {
     await withTransaction(pool, async (connection) => {
@@ -287,6 +311,17 @@ export async function processClaimedJob(pool, cfg, claimed, overrides = {}) {
       ],
     );
   });
+  const attendanceSteps = (definition.steps || []).filter((step) => step.type === 'browser_flutter_attendance');
+  const punchStep = attendanceSteps.find((step) => step.config?.phase === 'verify') || attendanceSteps.find((step) => !step.config?.phase || step.config.phase === 'all') || attendanceSteps.at(-1);
+  if (punchStep) {
+    // Attendance punches are recorded in the audit log, so each day's result is easy to find.
+    const punch = result.steps?.[punchStep.id] || {};
+    await writeAudit(pool, {
+      tenantId: job.tenant_id, userId: job.created_by || null, action: 'job.attendance_punch', entityType: 'job', entityId: job.id, projectId: job.project_id,
+      result: result.status === 'SUCCEEDED' ? 'success' : 'failure',
+      metadata: { workflowId: job.workflow_id, action: punch.action || punchStep.config?.action, outcome: punch.status || result.status, confirmed: punch.confirmed ?? false, error: result.error?.message?.slice(0, 300) || null, screenshots: attendanceSteps.reduce((sum, step) => sum + (result.steps?.[step.id]?.screenshots?.length || 0), 0) + (result.error?.screenshots?.length || 0) },
+    }).catch(() => {});
+  }
   await releaseItemsForJob(pool, job.id, result.status === 'SUCCEEDED'
     ? 'The job finished without setting the transaction status'
     : `The job attempt ended: ${result.error?.message || result.status}`.slice(0, 1000));

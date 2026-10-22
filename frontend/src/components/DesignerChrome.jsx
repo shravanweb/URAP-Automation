@@ -44,7 +44,7 @@ const TYPE_STYLE = {
   sheets_read_range: ['table', '#E8F5EC', '#1E8E3E'], sheets_append_rows: ['table', '#E8F5EC', '#1E8E3E'], sheets_update_range: ['table', '#E8F5EC', '#1E8E3E'],
   browser_open: ['globe', '#EAF1FB', '#2F6FD0'], browser_navigate: ['link', '#EAF1FB', '#2F6FD0'], browser_click: ['cursor', '#EAF1FB', '#2F6FD0'], browser_type: ['textInput', '#EAF1FB', '#2F6FD0'],
   browser_select_option: ['list', '#EAF1FB', '#2F6FD0'], browser_get_text: ['text', '#EAF1FB', '#2F6FD0'], browser_extract_table: ['table', '#EAF1FB', '#2F6FD0'], browser_wait_for: ['clock', '#EAF1FB', '#2F6FD0'],
-  browser_screenshot: ['image', '#EAF1FB', '#2F6FD0'], browser_close: ['close', '#EAF1FB', '#2F6FD0'],
+  browser_screenshot: ['image', '#EAF1FB', '#2F6FD0'], browser_close: ['close', '#EAF1FB', '#2F6FD0'], browser_flutter_attendance: ['clock', '#EAF1FB', '#2F6FD0'],
   desktop_open_app: ['monitor', '#F1EDFB', '#6941C6'], desktop_attach_window: ['monitor', '#F1EDFB', '#6941C6'], desktop_click: ['cursor', '#F1EDFB', '#6941C6'], desktop_type: ['textInput', '#F1EDFB', '#6941C6'],
   desktop_hotkey: ['bolt', '#F1EDFB', '#6941C6'], desktop_get_text: ['text', '#F1EDFB', '#6941C6'], desktop_close_window: ['close', '#F1EDFB', '#6941C6'],
   ocr_extract: ['image', '#FDF5E6', '#B26B00'], extract_document_fields: ['document', '#FDF5E6', '#B26B00'], create_task: ['tasks', '#E6F6F4', '#0E7C70'], wait_for_task: ['clock', '#E6F6F4', '#0E7C70'],

@@ -1,0 +1,88 @@
+{
+  "versionId": "e2e698cb-e466-4cbb-8787-f22c252c2233",
+  "definition": {
+    "schemaVersion": "1.0",
+    "retryPolicy": {
+      "maxAttempts": 1,
+      "backoffSeconds": 0
+    },
+    "steps": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "Start",
+        "config": {
+          "designer": {
+            "x": 48,
+            "y": 36
+          }
+        },
+        "errorPolicy": "fail",
+        "next": "read_csv_1"
+      },
+      {
+        "id": "read_csv_1",
+        "type": "read_csv",
+        "name": "Read CSV",
+        "config": {
+          "path": "in/data.csv",
+          "designer": {
+            "x": 16,
+            "y": 191
+          }
+        },
+        "timeoutMs": 30000,
+        "errorPolicy": "fail",
+        "next": "for_each_1"
+      },
+      {
+        "id": "log_message_1",
+        "type": "log_message",
+        "name": "Log Message",
+        "config": {
+          "level": "info",
+          "message": "Employee: {{item.name}}, ID: {{item.employee_id}}, Department: {{item.department}}",
+          "designer": {
+            "x": 16,
+            "y": 301
+          }
+        },
+        "timeoutMs": 30000,
+        "errorPolicy": "fail",
+        "next": "for_each_1"
+      },
+      {
+        "id": "for_each_1",
+        "type": "for_each",
+        "name": "For Each Row",
+        "config": {
+          "source": "{{steps.read_csv_1.rows}}",
+          "maxIterations": 100,
+          "bodyStart": "log_message_1",
+          "bodyEnd": "log_message_1",
+          "designer": {
+            "x": 16,
+            "y": 411
+          }
+        },
+        "errorPolicy": "fail",
+        "timeoutMs": 30000,
+        "next": "end"
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "End",
+        "config": {
+          "summaryFrom": [],
+          "designer": {
+            "x": 48,
+            "y": 718
+          }
+        },
+        "errorPolicy": "fail",
+        "next": null
+      }
+    ]
+  }
+}

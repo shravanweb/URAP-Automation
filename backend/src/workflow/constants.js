@@ -32,6 +32,7 @@ export const STEP_TYPES = [
   'browser_screenshot',
   'browser_select_option',
   'browser_close',
+  'browser_flutter_attendance',
   'desktop_open_app',
   'desktop_attach_window',
   'desktop_click',

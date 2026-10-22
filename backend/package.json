@@ -11,6 +11,7 @@
     "worker": "node src/worker.js",
     "setup": "node src/setup.js",
     "migrate": "node src/setup.js --migrate-only",
+    "setup:rewahr": "node src/setupRewahr.js",
     "test": "vitest run",
     "robot-simulator": "node src/robotSimulator.js",
     "robot": "node src/robotSimulator.js",

@@ -194,7 +194,7 @@ export async function executeWorkflow(definition, input, services, hooks = {}, d
     }
     return {
       status: error.cancelled ? 'CANCELLED' : 'FAILED',
-      error: { code: error.code || 'EXECUTION_FAILED', message: error.message, retryable: Boolean(error.retryable) },
+      error: { code: error.code || 'EXECUTION_FAILED', message: error.message, retryable: Boolean(error.retryable), ...(error.screenshots?.length ? { screenshots: error.screenshots } : {}) },
       steps: context.steps,
     };
   }

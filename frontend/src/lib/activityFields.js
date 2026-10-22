@@ -13,7 +13,6 @@ export const SELECTOR_TYPES = [
   ['label', 'Label'],
   ['placeholder', 'Placeholder'],
   ['testid', 'Test id'],
-  ['image', 'Image (PNG in project storage)'],
 ];
 
 export const CONTROL_TYPES = ['Button', 'CheckBox', 'ComboBox', 'Custom', 'DataGrid', 'DataItem', 'Document', 'Edit', 'Group', 'Hyperlink', 'List', 'ListItem', 'Menu', 'MenuItem', 'Pane', 'RadioButton', 'Tab', 'TabItem', 'Table', 'Text', 'Tree', 'TreeItem', 'Window'];
@@ -91,6 +90,18 @@ export const ACTIVITY_FIELDS = {
     session,
   ],
   browser_close: [session],
+  browser_flutter_attendance: [
+    { key: 'phase', label: 'Stage', kind: 'select', options: [['login', 'Log in'], ['attendance', 'Go to Attendance'], ['punch', 'Punch (click IN / OUT)'], ['verify', 'Verify'], ['all', 'All stages in one step']] },
+    { key: 'action', label: 'Punch', kind: 'select', options: [['in', 'Punch In'], ['out', 'Punch Out']] },
+    { key: 'email', label: 'Email (Log in)', kind: 'text', placeholder: '{{input.email}}' },
+    { key: 'credentialId', label: 'Password credential (Log in)', kind: 'credential', help: 'A Credential connection; enter the password with Set password on the Connections page.' },
+    { key: 'punchInText', label: 'Punch In button', kind: 'text', placeholder: 'IN', help: 'Whole label, ignoring case. Log out controls are never clicked.' },
+    { key: 'punchOutText', label: 'Punch Out button', kind: 'text', placeholder: 'OUT', help: 'Whole label, ignoring case, so OUT never matches Log Out.' },
+    { key: 'successTexts', label: 'Success texts', kind: 'list', placeholder: 'success, punched, marked' },
+    { key: 'screenshotFolder', label: 'Screenshot folder', kind: 'text', placeholder: 'screenshots/attendance' },
+    { key: 'timeoutMs', label: 'Timeout per step (ms)', kind: 'number', placeholder: '30000' },
+    session,
+  ],
   desktop_open_app: [
     { key: 'path', label: 'Application', kind: 'text', placeholder: 'notepad.exe or C:\\Apps\\erp.exe' },
     { key: 'args', label: 'Arguments', kind: 'list', placeholder: 'comma separated' },
@@ -135,7 +146,6 @@ export const ACTIVITY_FIELDS = {
     { key: 'documentType', label: 'Template', kind: 'select', options: [['invoice', 'Invoice'], ['receipt', 'Receipt'], ['purchase_order', 'Purchase order'], ['', 'Custom fields only']] },
     { key: 'fields', label: 'Custom fields', kind: 'json', placeholder: '[{ "name": "reference", "label": "Ref", "type": "id", "required": true }]', help: 'type: string, id, amount, date, number, email, gstin. Use label(s) or a regex pattern.' },
     { key: 'minConfidence', label: 'Minimum confidence (0–1)', kind: 'number', placeholder: '0.8' },
-    { key: 'handwriting', label: 'Handwriting-tolerant matching', kind: 'checkbox', help: 'Folds common OCR confusions (0/O, 1/I/l, 5/S) while reading the value from the original text.' },
     { key: 'dateOrder', label: 'Date order', kind: 'select', options: [['DMY', 'Day/Month/Year'], ['MDY', 'Month/Day/Year']] },
   ],
   create_task: [
@@ -187,17 +197,6 @@ export const ACTIVITY_FIELDS = {
     { key: 'connectionId', label: 'Connection', kind: 'connection', connectorTypes: ['google_sheets'] },
     { key: 'range', label: 'Range', kind: 'text', placeholder: 'Sheet1!B2' },
     { key: 'values', label: 'Values', kind: 'json', placeholder: '[["Done"]]' },
-  ],
-  send_notification: [
-    { key: 'channel', label: 'Channel', kind: 'select', options: [['in_app', 'In the app'], ['email', 'Email (SMTP)']] },
-    { key: 'connectionId', label: 'Email connection', kind: 'connection', connectorTypes: ['email'], when: (config) => config.channel === 'email', help: 'SMTP host, port, and from address. SendGrid uses smtp.sendgrid.net, port 587, username apikey, and the API key as the password.' },
-    { key: 'to', label: 'To', kind: 'text', placeholder: 'finance@company.com', when: (config) => config.channel === 'email' },
-    { key: 'cc', label: 'Cc', kind: 'text', when: (config) => config.channel === 'email' },
-    { key: 'bcc', label: 'Bcc', kind: 'text', when: (config) => config.channel === 'email' },
-    { key: 'subject', label: 'Subject', kind: 'text', placeholder: 'Invoice {{input.invoiceNumber}} created' },
-    { key: 'message', label: 'Message', kind: 'textarea', placeholder: 'Invoice {{input.invoiceNumber}} for {{input.vendor}}. Total: {{input.total}}' },
-    { key: 'html', label: 'HTML body', kind: 'textarea', placeholder: '<p>Invoice {{input.invoiceNumber}}</p>', when: (config) => config.channel === 'email', help: 'Optional. The message is still sent as the plain-text part.' },
-    { key: 'attachments', label: 'Attachments', kind: 'list', placeholder: 'uploads/invoice.pdf', when: (config) => config.channel === 'email', help: 'Project file paths, comma-separated. Up to 10 files.' },
   ],
 };
 
